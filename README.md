@@ -32,7 +32,26 @@ Share your own API creations in [Discord](https://discord.gg/mt9YVB8VDE)!
 
 If you're interested in contributing, [let us know](https://github.com/Sage-Future/fatebook/issues), and we can help you get up and running - thank you!
 
-These following instructions assume you're using macOS and Homebrew.
+### Using Docker
+
+The easiest way to get a local dev environment running:
+
+```shell
+git clone https://github.com/Sage-Future/fatebook.git
+cd fatebook
+cp .env.example .env
+docker compose up
+```
+
+The app will be available at <http://localhost:3000>. The database is created automatically and migrations run on startup.
+
+**Signing in:** Use the email magic link option. Docker Compose includes [Mailpit](https://mailpit.axllent.org/) as a local mail catcher — check <http://localhost:8025> to see the sign-in email after requesting one. No SMTP account needed.
+
+**Note:** The local dev SSL proxy is skipped in Docker, so the app runs on plain HTTP. The `.env.example` shared Google OAuth credentials require HTTPS and won't work; either set up your own OAuth credentials with `http://localhost:3000` redirect URIs, or use the email provider instead.
+
+---
+
+The following instructions assume you're using macOS and Homebrew.
 
 ### Clone the repository
 
@@ -85,7 +104,7 @@ createdb fatebook_development --owner fatebook
 ### Start the server
 
 1. Run `npm run dev`.
-2. Go to https://localhost:3000. You should be able to sign in and create predictions.
+2. Go to <https://localhost:3000>. You should be able to sign in and create predictions.
 
 ### Running tests
 
@@ -105,7 +124,7 @@ To test changes to the Chrome extension:
 
 1. Follow the general Fatebook dev setup steps above
 2. In `after.js`, make sure `extensionInfo.isDev = true`
-3. `npm run dev`, and check that your dev server is running at https://localhost:3000
+3. `npm run dev`, and check that your dev server is running at <https://localhost:3000>
 4. Go to `chrome://extensions`
 5. Disable the prod Fatebook extension, if you have it installed
 6. "Load unpacked", and select the chrome-extension directory
@@ -145,7 +164,7 @@ If you want to make or test changes to the Slack integration, you'll need to set
 
 Your `.env.example` is prefilled with the shared Fatebook developer Google OAuth credentials. If you'd like to create your own (e.g., to change the configuration), follow these steps:
 
-1. Go to https://console.cloud.google.com/apis/credentials.
+1. Go to <https://console.cloud.google.com/apis/credentials>.
 2. Click <kbd>Configure a project</kbd>. (Or, if you've previously made a project, click <kbd>Your project</kbd> -> <kbd>New project</kbd> -> Select your new project)
 3. Click <kbd>CREATE CREDENTIALS</kbd>.
 4. Select `OAuth client ID`.
@@ -154,6 +173,7 @@ Your `.env.example` is prefilled with the shared Fatebook developer Google OAuth
 7. Under `Name` type something like `Fatebook development`.
 8. Under `Authorized redirect URIs`, click <kbd>ADD URI</kbd> and under `URIs 1` type `https://localhost:3000/api/auth/callback/google`.
 9. Open the `.env` file in the root of the `fatebook` repository. Copy and paste the `Client ID` value after `GOOGLE_CLIENT_ID=` in `fatebook/.env`, and do the same for `Client secret` and `GOOGLE_CLIENT_SECRET=`.
+
 </details>
 
 If you have any problems, [let us know](https://github.com/Sage-Future/fatebook/issues)!
