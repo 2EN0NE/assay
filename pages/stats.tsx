@@ -1,7 +1,5 @@
 import { NextSeo } from "next-seo"
-import { Tournaments } from "../components/Tournaments"
 import { TrackRecord } from "../components/TrackRecord"
-import { UserLists } from "../components/UserLists"
 import { QuickFeedback } from "../components/ui/QuickFeedback"
 import { useUserId } from "../lib/web/utils"
 
@@ -17,11 +15,9 @@ export default function StatsPage() {
         )}
         {userId && (
           <div className="prose mx-auto mt-14 flex flex-col gap-8">
-            <Tournaments />
-            <UserLists />
             <QuickFeedback
-              type="Fatebook feedback"
-              placeholder="Give feedback on Fatebook..."
+              type="nano-fatebook-agent feedback"
+              placeholder="Give feedback on nano-fatebook-agent..."
               style="textarea"
             />
           </div>

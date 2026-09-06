@@ -1,0 +1,37 @@
+# Progress Record
+
+## Session: 2026-09-06 改造启动
+
+### Completed
+
+- Fork 源分析：origin=2EN0NE/myfatebook，上游=Sage-Future/fatebook
+- 决策确认（questionnaire）：全部合并上游 / 全量改名 / 概率校准+决策复盘结合 / 裁剪全部公共化功能
+- Phase 1 同步上游：merge upstream/main（9 commit），解决 README.md + package-lock.json 冲突
+- Phase 2 开始：package.json name/repository → nano-fatebook-agent
+- Phase 3 私有化裁剪：删除 Slack/Discord/Chrome/embed/team/tournament/list 独立文件、移除 Google OAuth、提取核心逻辑到 lib/web/resolution.ts、剥离 _utils_server.ts Slack、卸载 @slack/types/seratch-slack-types/discord-interactions/@types/chrome/slack-notify、修复 tsconfig types
+- 验证通过：tsc --noEmit = 0 错误、npm test 8/8
+
+### Key Decisions
+
+- Decision: 同步策略 = 全部合并上游 9 commit
+- Rationale: 用户明确选择，Docker 部署 + 安全修复对私有化改造有直接价值
+- Decision: 产品定位 = 概率校准 + 决策日志复盘 两者结合
+- Rationale: 既保留 fatebook 预测校准基因，又增加结构化决策复盘能力
+- Decision: 核心逻辑（resolve/score/undo/delete）提取到 lib/web/resolution.ts，去 Slack 依赖
+- Rationale: interactive_handlers 里核心逻辑与 Slack 深度耦合，私有化需保留核心剥离 Slack
+- Decision: 认证 = 保留 Email magic link，移除 Google OAuth
+- Rationale: 配合 Docker Compose 的 Mailpit 本地邮箱，零 OAuth 配置即可本地登录
+
+### Lessons Learned
+
+- merge 冲突预判：用 `git diff --stat merge-base..upstream` 提前定位冲突文件
+- ts-node 是传递依赖漂移，应显式声明
+- pi 环境的 secret redaction 会误判长类型名（如 QuestionWithForecastsAndOptionsAndScores），需用 base64/node 脚本绕过
+- pi-lens 的 "Cannot find module" + 连锁 implicit any 是 tsserver 在 npm install/prisma generate 前的陈旧缓存；权威验证用 tsc --noEmit（独立进程，新鲜解析）
+- @prisma/client 导出链是 index.d.ts → default.d.ts → index.d.ts，model 类型（Forecast 等）在类型层存在但 runtime undefined 属正常
+
+### Next Steps
+
+- Phase 2: 品牌文案全面改名（QuickFeedback/notifications/页面标题里的 Fatebook → nano-fatebook-agent）
+- Phase 3（可选）: schema.prisma 的 Tournament/UserList/Workspace/SlackMessage model 深度裁剪
+- Phase 4: agent 化改造（概率校准 + 决策复盘 + LLM 交互层）

@@ -34,8 +34,8 @@ export default function UnsubscribePage() {
       <div className="prose mx-auto">
         <p>
           {isUnsubscribed
-            ? "You have unsubscribed from Fatebook emails. Click below to resubscribe."
-            : "Unsubscribe below to stop receiving emails from Fatebook."}
+            ? "You have unsubscribed from nano-fatebook-agent emails. Click below to resubscribe."
+            : "Unsubscribe below to stop receiving emails from nano-fatebook-agent."}
         </p>
         <div className="flex flex-col gap-4">
           <input

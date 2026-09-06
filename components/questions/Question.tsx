@@ -16,7 +16,6 @@ import { FormattedDate } from "../ui/FormattedDate"
 import { Username } from "../ui/Username"
 import { QuestionDetails } from "./QuestionDetails"
 import { ResolveButton } from "./ResolveButton"
-import { SharePopover } from "./SharePopover"
 import { UpdateableLatestForecast } from "./UpdateableLatestForecast"
 
 import { ArrowTopRightOnSquareIcon } from "@heroicons/react/24/solid"
@@ -155,11 +154,10 @@ export function Question({
                 ))}
               </div>
             )}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 col-span-3">
+            <div className="grid grid-cols-2 lg:grid-cols-3 gap-2 col-span-3">
               <span className="text-sm my-auto" key={`${question.id}author`}>
                 <Username user={question.user} unknownUserText="Anonymous" />
               </span>
-              <SharePopover question={question} />
               {question.resolvedAt ? (
                 <span
                   className="text-sm text-neutral-400 my-auto text-center max-sm:text-left [text-wrap:balanced]"

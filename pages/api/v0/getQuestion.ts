@@ -55,7 +55,7 @@ const getQuestionPublicApi = async (req: Request, res: NextApiResponse) => {
     })
     if (!user) {
       return res.status(401).json({
-        error: `Invalid API key. Check your API key at https://fatebook.io/api-setup`,
+        error: `Invalid API key. Check your API key at https://localhost:3000/api-setup`,
       })
     }
     authedUserId = user.id
@@ -124,7 +124,7 @@ const getQuestionPublicApi = async (req: Request, res: NextApiResponse) => {
   } catch (e) {
     return res.status(401).json({
       message:
-        "You don't have access to that question. Check your API key at https://fatebook.io/api-setup",
+        "You don't have access to that question. Check your API key at https://localhost:3000/api-setup",
     })
   }
 

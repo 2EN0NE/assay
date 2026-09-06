@@ -108,16 +108,11 @@ export function Predict({
       await utils.question.getQuestionsUserCreatedOrForecastedOnOrIsSharedWith.invalidate(
         {},
         {
-          refetchPage: (lastPage, index) => index === 0, // assumes the new question is on the first page (must be ordered by recent)
+          refetchPage: (_lastPage, index: number) => index === 0, // assumes the new question is on the first page (must be ordered by recent)
         },
       )
       await utils.question.getForecastCountByDate.invalidate()
       await utils.question.getOnboardingStage.invalidate()
-      if (questionDefaults?.tournamentId) {
-        await utils.tournament.get.invalidate({
-          id: questionDefaults.tournamentId,
-        })
-      }
     },
   })
 

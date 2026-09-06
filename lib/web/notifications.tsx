@@ -1,7 +1,9 @@
+import { Question, User } from "@prisma/client"
 import { ServerClient } from "postmark"
 import { postmarkApiToken } from "../_constants"
 import { backendAnalyticsEvent } from "../_utils_server"
 import prisma from "../prisma"
+import { getQuestionUrl } from "./question_url"
 import { webFeedbackUrl } from "./utils"
 
 export async function createNotification({
@@ -28,6 +30,28 @@ export async function createNotification({
       tags,
       userId,
       questionId,
+    },
+  })
+}
+
+export async function sendEmailReadyToResolveNotification(
+  question: Question & { user: User },
+) {
+  await createNotification({
+    title: `Ready to resolve: ${question.title}`,
+    content: `Are you ready to resolve your question: ${question.title}`,
+    url: getQuestionUrl(question),
+    tags: ["ready_to_resolve"],
+    userId: question.userId,
+    questionId: question.id,
+  })
+
+  await prisma.question.update({
+    where: {
+      id: question.id,
+    },
+    data: {
+      pingedForResolution: true,
     },
   })
 }
@@ -154,13 +178,13 @@ export async function sendEmailWithTemplateUnbatched({
   let response
   try {
     response = await client.sendEmailWithTemplate({
-      From: "reminders@fatebook.io",
+      From: "reminders@localhost:3000",
       ReplyTo: "hello@sage-future.org",
       To: to,
       TemplateAlias: templateAlias,
       TemplateModel: {
-        product_url: "https://fatebook.io",
-        product_name: "Fatebook",
+        product_url: "https://localhost:3000",
+        product_name: "nano-fatebook-agent",
         ...templateParams,
       },
       MessageStream: "outbound",
@@ -216,13 +240,13 @@ export async function sendEmailUnbatched({
   let response
   try {
     response = await client.sendEmailWithTemplate({
-      From: "reminders@fatebook.io",
+      From: "reminders@localhost:3000",
       ReplyTo: "hello@sage-future.org",
       To: to,
       TemplateAlias: "blank-transactional",
       TemplateModel: {
-        product_url: "https://fatebook.io",
-        product_name: "Fatebook",
+        product_url: "https://localhost:3000",
+        product_name: "nano-fatebook-agent",
         subject:
           subject.length >= 1999 ? `${subject.slice(0, 1995)}...` : subject,
         html_body: htmlBody,
@@ -255,7 +279,7 @@ export async function sendEmailUnbatched({
 
 export function fatebookEmailFooter() {
   return `\n
-<p><i><a href="https://fatebook.io">Fatebook</a> helps you rapidly make and track predictions about the future.</i></p>
-<p><a href=${webFeedbackUrl}>Give feedback on Fatebook</a></p>
+<p><i><a href="https://localhost:3000">nano-fatebook-agent</a> helps you rapidly make and track predictions about the future.</i></p>
+<p><a href=${webFeedbackUrl}>Give feedback on nano-fatebook-agent</a></p>
 `
 }

@@ -377,7 +377,7 @@ export function OnboardingChecklist() {
                     href="/for-slack"
                     className="text-neutral-500 hover:text-neutral-600"
                   >
-                    Fatebook for Slack
+                    nano-fatebook-agent for Slack
                   </Link>{" "}
                   to your workspace
                 </li>

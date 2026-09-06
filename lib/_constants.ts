@@ -42,7 +42,7 @@ export const feedbackFormUrl = "https://forms.gle/nHkwvMFCjtNBHAT69"
 export const quantifiedIntuitionsUrl = "https://quantifiedintuitions.org/"
 export const questionWritingTipsUrl =
   "https://docs.google.com/document/d/1yQnNLrLCLr9dQs01vsNwIPV5-cp1PUFMcLvPuSt4KNg"
-export const fatebookUrl = "https://fatebook.io/" // TODO: over time change usages to this constant
+export const fatebookUrl = "https://localhost:3000/" // TODO: over time change usages to this constant
 export const defaultDisplayPictureUrl = fatebookUrl + "default_avatar.png"
 
 // Special workspaces

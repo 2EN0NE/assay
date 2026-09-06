@@ -1,8 +1,6 @@
 import { useSession } from "next-auth/react"
 import { Questions } from "../components/Questions"
-import { Tournaments } from "../components/Tournaments"
 import { TrackRecord } from "../components/TrackRecord"
-import { UserLists } from "../components/UserLists"
 import { WhyForecastInfo } from "../components/WhyForecastInfo"
 import { Predict } from "../components/predict-form/Predict"
 import { QuickFeedback } from "../components/ui/QuickFeedback"
@@ -46,12 +44,10 @@ function Sidebar() {
       <div className="min-h-28">{userId && <OnboardingChecklist />}</div>
       <div className="max-w-[320px] flex flex-col gap-12 ml-auto lg:w-[320px]">
         {userId && <TrackRecord trackRecordUserId={userId} />}
-        {userId && <Tournaments />}
-        {userId && <UserLists />}
         {userId && (
           <QuickFeedback
-            type="Fatebook feedback"
-            placeholder="Give feedback on Fatebook..."
+            type="nano-fatebook-agent feedback"
+            placeholder="Give feedback on nano-fatebook-agent..."
             style="textarea"
           />
         )}

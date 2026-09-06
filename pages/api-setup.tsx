@@ -24,11 +24,11 @@ export default function ApiPage() {
     <div className="px-4 pt-12 lg:pt-16 mx-auto max-w-6xl">
       <NextSeo
         title="API"
-        description="Use the API to create Fatebook questions from a URL"
+        description="Use the API to create nano-fatebook-agent questions from a URL"
       />
       <div className="mx-auto prose">
-        <h2>Fatebook API</h2>
-        <h3>Use the API to create Fatebook questions from a URL</h3>
+        <h2>nano-fatebook-agent API</h2>
+        <h3>Use the API to create nano-fatebook-agent questions from a URL</h3>
         {!userId && (
           <div className="flex w-full p-4">
             <button
@@ -87,12 +87,12 @@ export default function ApiPage() {
           </div>
         )}
         <p>
-          You can use your API key to create Fatebook questions just by going
+          You can use your API key to create nano-fatebook-agent questions just by going
           this URL (separated onto multiple lines for readability):
         </p>
 
         <p className="bg-neutral-100 outline outline-neutral-300 outline-1 p-2 rounded-md break-words">
-          {"https://fatebook.io/api/v0/createQuestion"}
+          {"https://localhost:3000/api/v0/createQuestion"}
           {"?apiKey="}
           {apiKey.data || "YOUR_API_KEY"}
           <br />
@@ -116,7 +116,7 @@ export default function ApiPage() {
         <p>{"Note: a date by itself will default to a time of 00:00 in the UTC timezone, which may not be the date you intended in your local timezone.  You can pass an ISO 8601 datetime for localization; for example, 2025-01-01T00:00+00:00.  You can also add some optional parameters, here's an example:"}</p>
 
         <p className="bg-neutral-100 outline outline-neutral-300 outline-1 p-2 rounded-md break-words">
-          {"https://fatebook.io/api/v0/createQuestion"}
+          {"https://localhost:3000/api/v0/createQuestion"}
           {"?apiKey="}
           {apiKey.data || "YOUR_API_KEY"}
           <br />
@@ -178,9 +178,9 @@ export default function ApiPage() {
         </p>
 
         <p>
-          You can use this to integrate Fatebook with other tools, like iOS
+          You can use this to integrate nano-fatebook-agent with other tools, like iOS
           shortcuts. If you create an integration, let us know and we can tell
-          other Fatebook users about it!
+          other nano-fatebook-agent users about it!
         </p>
 
         <p>
@@ -191,18 +191,18 @@ export default function ApiPage() {
           .
         </p>
 
-        <h3>Integrations that other Fatebook users have created:</h3>
+        <h3>Integrations that other nano-fatebook-agent users have created:</h3>
         <ul>
           <li>
             <Link href="https://github.com/GarretteBaker/obsidian-fatebook">
-              An Obsidian plugin to create and preview Fatebook questions right
+              An Obsidian plugin to create and preview nano-fatebook-agent questions right
               inside your editor
             </Link>
             {" - by D0TheMath"}
           </li>
           <li>
             <Link href="https://www.icloud.com/shortcuts/25903acfcd3d4fd5bed31c2f50322928">
-              An iOS shortcut to create a Fatebook question
+              An iOS shortcut to create a nano-fatebook-agent question
             </Link>
             {
               " - by @JasperGo. You can add it to your homescreen or use Siri to create a question!"
@@ -210,26 +210,26 @@ export default function ApiPage() {
           </li>
           <li>
             <Link href="https://github.com/sonofhypnos/fatebook.el">
-              An Emacs plugin to create Fatebook questions
+              An Emacs plugin to create nano-fatebook-agent questions
             </Link>
             {" - by @sonofhypnos"}
           </li>
           <li>
             <Link href="https://github.com/Calebp98/alfred-fatebook-workflow">
-              An Alfred workflow to create Fatebook questions
+              An Alfred workflow to create nano-fatebook-agent questions
             </Link>
             {" - by Caleb Parikh"}
           </li>
         </ul>
-        <h3>Use the API to get Fatebook questions by ID</h3>
+        <h3>Use the API to get nano-fatebook-agent questions by ID</h3>
         <p>
           {
-            "You can also use the API to get Fatebook questions by ID, here's an example:"
+            "You can also use the API to get nano-fatebook-agent questions by ID, here's an example:"
           }
         </p>
 
         <p className="bg-neutral-100 outline outline-neutral-300 outline-1 p-2 rounded-md break-words">
-          {"https://fatebook.io/api/v0/getQuestion"}
+          {"https://localhost:3000/api/v0/getQuestion"}
           {"?apiKey="}
           {apiKey.data || "YOUR_API_KEY"}
           <br />
@@ -245,7 +245,7 @@ export default function ApiPage() {
             "To get the question ID, go to the question page and copy the ID from the URL. The ID is the part after the --, e.g. for this question:"
           }{" "}
           <span className="bg-neutral-100 outline outline-neutral-300 outline-1 p-0.5 rounded-md">
-            https://fatebook.io/q/will-adam-win-the-next-aoe-game---clkqtczp00001l008qcrma6s7
+            https://localhost:3000/q/will-adam-win-the-next-aoe-game---clkqtczp00001l008qcrma6s7
           </span>{" "}
           the ID is{" "}
           <span className="bg-neutral-100 outline outline-neutral-300 outline-1 p-0.5 rounded-md">
@@ -257,7 +257,7 @@ export default function ApiPage() {
         <p>
           Click{" "}
           <a
-            href={`https://fatebook.io/api/v0/getQuestion?apiKey=${
+            href={`https://localhost:3000/api/v0/getQuestion?apiKey=${
               apiKey.data || "YOUR_API_KEY"
             }&questionId=clkqtczp00001l008qcrma6s7`}
             target="_blank"

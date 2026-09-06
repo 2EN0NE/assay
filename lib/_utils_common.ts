@@ -421,7 +421,7 @@ export async function subscribeToMailingList(email: string, name?: string) {
           {
             email,
             tags: ["fatebook-user"],
-            products: ["Fatebook"],
+            products: ["nano-fatebook-agent"],
             name,
           },
         ],

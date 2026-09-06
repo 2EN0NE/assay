@@ -20,11 +20,11 @@ export default function ImportFromSpreadsheetPage() {
     <div className="px-4 pt-12 lg:pt-16 mx-auto max-w-4xl">
       <NextSeo
         title="Import from spreadsheet"
-        description="Import your predictions from a spreadsheet into Fatebook"
+        description="Import your predictions from a spreadsheet into nano-fatebook-agent"
       />
       <div className="mx-auto">
         <div className="prose mx-auto">
-          <h3>Import questions from a spreadsheet into Fatebook</h3>
+          <h3>Import questions from a spreadsheet into nano-fatebook-agent</h3>
           <ol>
             <li>
               {
@@ -119,7 +119,7 @@ const rows = [
   {
     name: "resolveBy",
     label:
-      "[Optional] Resolve by date - Fatebook will remind you to resolve on this day (if blank we use the question creation date + 24h)",
+      "[Optional] Resolve by date - nano-fatebook-agent will remind you to resolve on this day (if blank we use the question creation date + 24h)",
     optional: true,
   },
   {

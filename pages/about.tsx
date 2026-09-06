@@ -6,15 +6,15 @@ import { WhyForecastInfo } from "../components/WhyForecastInfo"
 import { webFeedbackUrl } from "../lib/web/utils"
 
 const about = String.raw`
-Fatebook aims to be the fastest way to make and track your predictions.
+nano-fatebook-agent aims to be the fastest way to make and track your predictions.
 
-Fatebook was made by [Sage](https://sage-future.org), a 501(c)(3) charity building tools to make sense of the future. You can [donate](https://www.every.org/sage-future?utm_campaign=donate-link&method=card%2Cbank%2Cpaypal%2Cpay%2Cvenmo%2Cstocks%2Cdaf%2Ccrypto#/donate) to support our work.
+nano-fatebook-agent was made by [Sage](https://sage-future.org), a 501(c)(3) charity building tools to make sense of the future. You can [donate](https://www.every.org/sage-future?utm_campaign=donate-link&method=card%2Cbank%2Cpaypal%2Cpay%2Cvenmo%2Cstocks%2Cdaf%2Ccrypto#/donate) to support our work.
 
 Want something changed or added? Send us feedback on [Discord](https://discord.gg/mt9YVB8VDE), to [hello@sage-future.org](mailto:hello@sage-future.org), or in this [form](${webFeedbackUrl}).
 
-You can use Fatebook through [fatebook.io](https://fatebook.io), in [Slack](/for-slack), or anywhere on the web with the [Fatebook browser extension](/extension). If you want to use Fatebook somewhere else, [suggest another Fatebook integration](https://forms.gle/nRqUcj154oEVLxdZ9).
+You can use nano-fatebook-agent through [localhost:3000](https://localhost:3000), in [Slack](/for-slack), or anywhere on the web with the [nano-fatebook-agent browser extension](/extension). If you want to use nano-fatebook-agent somewhere else, [suggest another nano-fatebook-agent integration](https://forms.gle/nRqUcj154oEVLxdZ9).
 
-Fatebook is open source. You can find the code on [GitHub](https://github.com/Sage-Future/fatebook). Contributions welcome!`
+nano-fatebook-agent is open source. You can find the code on [GitHub](https://github.com/Sage-Future/fatebook). Contributions welcome!`
 
 export default function AboutPage() {
   return (

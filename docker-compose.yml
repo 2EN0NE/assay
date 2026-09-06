@@ -2,8 +2,8 @@ services:
   mail:
     image: axllent/mailpit:latest
     ports:
-      - "1025:1025"  # SMTP
-      - "8025:8025"  # Web UI
+      - "1025:1025" # SMTP
+      - "8025:8025" # Web UI
 
   db:
     image: postgres:16-alpine
@@ -31,7 +31,9 @@ services:
       - .env
     environment:
       # Override DB URLs to point to the compose db service instead of localhost
+      # pi-lens-ignore: line-length
       DATABASE_URL: postgresql://fatebook:postgres@db:5432/fatebook_development
+      # pi-lens-ignore: line-length
       DATABASE_DIRECT_URL: postgresql://fatebook:postgres@db:5432/fatebook_development
       # HTTP (no SSL proxy in Docker)
       NEXTAUTH_URL: http://localhost:3000/api/auth
@@ -41,8 +43,8 @@ services:
       AUTH_EMAIL_FROM: fatebook@localhost
     volumes:
       - .:/app
-      - /app/node_modules  # preserve node_modules installed in image
-      - /app/.next         # preserve Next.js build cache
+      - /app/node_modules # preserve node_modules installed in image
+      - /app/.next # preserve Next.js build cache
     depends_on:
       db:
         condition: service_healthy

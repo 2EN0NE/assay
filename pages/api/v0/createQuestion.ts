@@ -10,7 +10,7 @@ import { UserListWithAuthorAndUsers } from "../../../prisma/additional"
 
 const createQuestionSchema = z.object({
   apiKey: z.string().nonempty({
-    message: "apiKey must be a string (see https://fatebook.io/api-setup)",
+    message: "apiKey must be a string (see https://localhost:3000/api-setup)",
   }),
   title: z.string().nonempty({ message: "title must be a string" }),
   resolveBy: z
@@ -92,7 +92,7 @@ const createQuestionPublicApi = async (req: Request, res: NextApiResponse) => {
   })
   if (!user) {
     res.status(401).json({
-      error: `Invalid API key. Check your API key at https://fatebook.io/api-setup`,
+      error: `Invalid API key. Check your API key at https://localhost:3000/api-setup`,
     })
     return
   }
@@ -144,7 +144,7 @@ const createQuestionPublicApi = async (req: Request, res: NextApiResponse) => {
     )
     if (missingUsers.length > 0) {
       res.status(400).json({
-        error: `The following users do not have an account on Fatebook: ${missingUsers.join(
+        error: `The following users do not have an account on nano-fatebook-agent: ${missingUsers.join(
           ", ",
         )}`,
       })

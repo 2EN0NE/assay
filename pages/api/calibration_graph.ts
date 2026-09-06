@@ -176,7 +176,7 @@ export async function getBucketedForecasts(userId: string, tags?: string[]) {
     return Math.floor(value * NUM_BINS)
   }
 
-  const bins: typeof forecasts[] = Array.from({ length: NUM_BINS }, () => [])
+  const bins: (typeof forecasts)[] = Array.from({ length: NUM_BINS }, () => [])
   forecasts.forEach((f) => {
     bins[getBinIndex(f.forecast)].push(f)
   })

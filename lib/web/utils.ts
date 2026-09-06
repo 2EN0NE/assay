@@ -16,7 +16,7 @@ export function useUserId() {
 export async function signInToFatebook() {
   if (isWebview(window.navigator.userAgent)) {
     toast(
-      "Open Fatebook in Safari or Chrome to sign in.\n\nGoogle does not support this browser.",
+      "Open nano-fatebook-agent in Safari or Chrome to sign in.\n\nGoogle does not support this browser.",
       {
         duration: 10000,
       },
@@ -440,9 +440,4 @@ export function useOS() {
   }, [])
 
   return os
-}
-
-export function useFatebookForChrome() {
-  const browser = useBrowser()
-  return `Fatebook for ${browser}`
 }

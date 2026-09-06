@@ -59,11 +59,11 @@ export default function QuestionPage({
               <XMarkIcon height={12} width={12} />
             </button>
             <h2 className="text-sm font-bold mb-1 mt-0">
-              Created with Fatebook for Chrome
+              Created with nano-fatebook-agent for Chrome
             </h2>
             <p className="text-xs mb-2">
               View and create embedded predictions anywhere on the web with the
-              Fatebook Chrome extension
+              nano-fatebook-agent Chrome extension
             </p>
             <span className="">
               <Link href="/extension">

@@ -27,3 +27,10 @@ localhost.pem
 
 # Don't commit scripts in root dir
 *.py
+
+# pi runtime
+.pi/
+
+# Playwright
+playwright-report/
+test-results/

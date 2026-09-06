@@ -19,17 +19,13 @@ import {
   forecastsAreHidden,
   getDateYYYYMMDD,
 } from "../_utils_common"
+import { backendAnalyticsEvent } from "../_utils_server"
 import {
-  backendAnalyticsEvent,
-  updateForecastQuestionMessages,
-} from "../_utils_server"
-import { deleteQuestion } from "../interactive_handlers/edit_question_modal"
-import { syncToSlackIfNeeded } from "../interactive_handlers/postFromWeb"
-import {
+  deleteQuestion,
   handleQuestionResolution,
   undoQuestionOptionResolution,
   undoQuestionResolution,
-} from "../interactive_handlers/resolve"
+} from "./resolution"
 import prisma from "../prisma"
 import { questionsToCsv } from "./export"
 import {
@@ -128,7 +124,7 @@ const zodExtraFilters = z.object({
   showAllPublic: z
     .boolean({
       description:
-        "Show all public questions from fatebook.io/public (if false, get only questions you've created, forecasted on, or are shared with you)",
+        "Show all public questions from localhost:3000/public (if false, get only questions you've created, forecasted on, or are shared with you)",
     })
     .optional(),
   searchString: z
@@ -327,7 +323,7 @@ export const questionRouter = router({
     .input(
       z.object({
         apiKey: z.string({
-          description: "Your Fatebook API key. Get it at fatebook.io/api-setup",
+          description: "Your nano-fatebook-agent API key. Get it at localhost:3000/api-setup",
         }),
         ...{
           ...zodExtraFilters.shape,
@@ -356,7 +352,7 @@ export const questionRouter = router({
         method: "GET",
         path: "/v0/getQuestions",
         description:
-          "By default, this fetches all questions that you've created, forecasted on, or are shared with you. Alternatively, if you set showAllPublic to true, it fetches all public questions from fatebook.io/public.",
+          "By default, this fetches all questions that you've created, forecasted on, or are shared with you. Alternatively, if you set showAllPublic to true, it fetches all public questions from localhost:3000/public.",
       },
     })
     .output(
@@ -595,20 +591,6 @@ export const questionRouter = router({
         })
       }
 
-      try {
-        await syncToSlackIfNeeded(question, ctx.userId)
-      } catch (error) {
-        if (error instanceof Error && error.message.includes("is_archived")) {
-          // If the error is due to an archived Slack channel, handle it gracefully
-          return {
-            url: getQuestionUrl(question),
-            ...input,
-            slackSyncError: "archived_channel",
-          }
-        }
-        throw error
-      }
-
       return { url: getQuestionUrl(question), ...input }
     }),
 
@@ -692,7 +674,7 @@ export const questionRouter = router({
         unlisted: z
           .boolean({
             description:
-              "Change whether the question is unlisted (not shown on fatebook.io/public)",
+              "Change whether the question is unlisted (not shown on localhost:3000/public)",
           })
           .optional(),
         apiKey: z.string().optional(),
@@ -703,7 +685,7 @@ export const questionRouter = router({
         method: "PATCH",
         path: "/v0/setSharedPublicly",
         description:
-          "Change the visibility of the question. The 'sharedPublicly' parameter sets whether the question is accessible to anyone via a direct link. The 'unlisted' parameter sets whether the question is visible on fatebook.io/public",
+          "Change the visibility of the question. The 'sharedPublicly' parameter sets whether the question is accessible to anyone via a direct link. The 'unlisted' parameter sets whether the question is visible on localhost:3000/public",
       },
     })
     .output(z.undefined())
@@ -1032,11 +1014,6 @@ export const questionRouter = router({
           },
         },
       })
-
-      await updateForecastQuestionMessages(
-        submittedForecast.question,
-        "New forecast",
-      )
 
       const q = submittedForecast.question
       for (const userToNotify of filterToUniqueIds([
@@ -1367,8 +1344,6 @@ export const questionRouter = router({
         },
       })
 
-      await updateForecastQuestionMessages(question, "Question edited")
-
       await backendAnalyticsEvent("question_edited", {
         platform: input.apiKey ? "api" : "web",
         user: ctx.userId,
@@ -1674,7 +1649,7 @@ export async function emailNewlySharedWithUsers(
           )}</p>
 <p><a href=${getQuestionUrl(
             question,
-          )}>See ${author}'s prediction and add your own on Fatebook.</a></p>
+          )}>See ${author}'s prediction and add your own on nano-fatebook-agent.</a></p>
 ${fatebookEmailFooter()}`,
         })
       }
@@ -1816,7 +1791,7 @@ async function getUserByApiKeyOrThrow(apiKey: string) {
   throw new TRPCError({
     code: "UNAUTHORIZED",
     message:
-      "Could not find a user with that API key. See fatebook.io/api-setup",
+      "Could not find a user with that API key. See localhost:3000/api-setup",
   })
 }
 
@@ -1840,7 +1815,7 @@ async function getUserFromCtxOrApiKeyOrThrow(
   if (!apiKey) {
     throw new TRPCError({
       code: "UNAUTHORIZED",
-      message: "You must provide an API key. See fatebook.io/api-setup",
+      message: "You must provide an API key. See localhost:3000/api-setup",
     })
   }
 

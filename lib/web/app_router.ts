@@ -1,28 +1,32 @@
 import { TRPCError } from "@trpc/server"
 import { generateOpenApiDocument } from "trpc-openapi"
 import { z } from "zod"
-import { sendEmailReadyToResolveNotification } from "../../pages/api/check_for_message_updates"
-import {
-  backendAnalyticsEvent,
-  getSlackPermalinkFromChannelAndTS,
-} from "../_utils_server"
+import { sendEmailReadyToResolveNotification } from "./notifications"
+import { parseDecision } from "./llm_parse"
+import { backendAnalyticsEvent } from "../_utils_server"
 import prisma from "../prisma"
 import { feedbackRouter } from "./feedback_router"
 import { importRouter } from "./import_router"
 import { questionRouter } from "./question_router"
 import { tagsRouter } from "./tags_router"
-import { tournamentRouter } from "./tournament_router"
 import { getClientBaseUrl } from "./trpc"
 import { publicProcedure, router } from "./trpc_base"
-import { userListRouter } from "./userList_router"
 
 export const appRouter = router({
   question: questionRouter,
-  userList: userListRouter,
   tags: tagsRouter,
   import: importRouter,
-  tournament: tournamentRouter,
   feedback: feedbackRouter,
+
+  parseDecision: publicProcedure
+    .input(
+      z.object({
+        text: z.string().min(1),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      return await parseDecision(input.text)
+    }),
 
   sendEmail: publicProcedure
     .input(
@@ -43,27 +47,6 @@ export const appRouter = router({
         throw new Error("question not found")
       }
       await sendEmailReadyToResolveNotification(question)
-    }),
-
-  getSlackPermalink: publicProcedure
-    .input(
-      z
-        .object({
-          teamId: z.string(),
-          channel: z.string(),
-          ts: z.string(),
-        })
-        .optional(),
-    )
-    .query(async ({ input }) => {
-      if (!input) {
-        return null
-      }
-      return await getSlackPermalinkFromChannelAndTS(
-        input.teamId,
-        input.channel,
-        input.ts,
-      )
     }),
 
   unsubscribe: publicProcedure
@@ -321,7 +304,7 @@ export const appRouter = router({
 export type AppRouter = typeof appRouter
 
 export const openApiDocument = generateOpenApiDocument(appRouter, {
-  title: "Fatebook OpenAPI",
+  title: "nano-fatebook-agent OpenAPI",
   version: "1.0.0",
   baseUrl: getClientBaseUrl(false) + "/api",
 })

@@ -3,20 +3,20 @@ import { DefaultSeo } from "next-seo"
 export default function Meta() {
   return (
     <DefaultSeo
-      titleTemplate="%s - Fatebook"
-      defaultTitle="Fatebook"
+      titleTemplate="%s - nano-fatebook-agent"
+      defaultTitle="nano-fatebook-agent"
       description="Track your predictions, make better decisions."
-      canonical="https://fatebook.io/"
+      canonical="https://localhost:3000/"
       openGraph={{
         type: "website",
         locale: "en_US",
-        url: "https://fatebook.io/",
-        title: "Fatebook",
+        url: "https://localhost:3000/",
+        title: "nano-fatebook-agent",
         description: "Track your predictions, make better decisions.",
-        siteName: "Fatebook",
+        siteName: "nano-fatebook-agent",
         images: [
           {
-            url: "https://fatebook.io/telescope_future_1200_white.png",
+            url: "https://localhost:3000/telescope_future_1200_white.png",
             width: 1200,
             height: 686,
             alt: "",
@@ -26,7 +26,7 @@ export default function Meta() {
       additionalLinkTags={[
         {
           rel: "icon",
-          href: "https://fatebook.io/scale.svg",
+          href: "https://localhost:3000/scale.svg",
         },
       ]}
       twitter={{

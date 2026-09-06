@@ -3,7 +3,6 @@ import { NextApiRequest, NextApiResponse } from "next"
 import NextAuth, { NextAuthOptions, Session, User } from "next-auth"
 import { JWT } from "next-auth/jwt"
 import EmailProvider from "next-auth/providers/email"
-import GoogleProvider from "next-auth/providers/google"
 import {
   capitalizeFirstLetter,
   subscribeToMailingList,
@@ -122,8 +121,6 @@ export const authOptions: NextAuthOptions = {
         const verificationToken = await prisma.verificationToken.findUnique({
           where: { identifier_token },
         })
-        // @ts-expect-errors // MongoDB needs an ID, but we don't
-        if (verificationToken.id) delete verificationToken.id
         return verificationToken
       } catch (error: any) {
         // If token already used/deleted, just return null
@@ -134,13 +131,6 @@ export const authOptions: NextAuthOptions = {
     },
   },
   providers: [
-    GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID || "",
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
-      // allow slackbot users to link Google OAuth Accounts later in web
-      // "dangerous" if Google does not verify the email address
-      allowDangerousEmailAccountLinking: true,
-    }),
     EmailProvider({
       server: process.env.AUTH_EMAIL_SERVER,
       from: process.env.AUTH_EMAIL_FROM,
@@ -150,7 +140,6 @@ export const authOptions: NextAuthOptions = {
   theme: {
     colorScheme: "light",
     brandColor: "#4338ca",
-    logo: "https://fatebook.io/logo.png",
   },
   secret: process.env.SECRET,
   session: {

@@ -10,7 +10,7 @@ export function getClientBaseUrl(useRelativePath = true) {
   }
 
   if (process.env.NODE_ENV === "production") {
-    return "https://fatebook.io"
+    return "https://localhost:3000"
   }
 
   if (process.env.VERCEL_URL) {

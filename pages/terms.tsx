@@ -12,14 +12,14 @@ export default function TermsPage() {
 }
 
 const termsMd = String.raw`
-Fatebook Terms of Use
+nano-fatebook-agent Terms of Use
 --------------------
 
 _We generated these terms quickly using a template - if you think something is wrong or want us to change something, get in touch at hello@sage-future.org._
 
 Version 1.0
 
-The Fatebook website and Slack bot located at fatebook.io are copyrighted works belonging to Sage Future Inc. Certain features of the Site may be subject to additional guidelines, terms, or rules, which will be posted on the Site in connection with such features.
+The nano-fatebook-agent website and Slack bot located at localhost:3000 are copyrighted works belonging to Sage Future Inc. Certain features of the Site may be subject to additional guidelines, terms, or rules, which will be posted on the Site in connection with such features.
 
 All such additional terms, guidelines, and rules are incorporated by reference into these Terms.
 
@@ -64,7 +64,7 @@ Other Users. Each Site user is solely responsible for any and all of its own Use
 
 You hereby release and forever discharge the Company and our officers, employees, agents, successors, and assigns from, and hereby waive and relinquish, each and every past, present and future dispute, claim, controversy, demand, right, obligation, liability, action and cause of action of every kind and nature, that has arisen or arises directly or indirectly out of, or that relates directly or indirectly to, the Site. If you are a California resident, you hereby waive California civil code section 1542 in connection with the foregoing, which states: "a general release does not extend to claims which the creditor does not know or suspect to exist in his or her favor at the time of executing the release, which if known by him or her must have materially affected his or her settlement with the debtor."
 
-Cookies and Web Beacons. Like any other website, Fatebook uses 'cookies'. These cookies are used to store information including visitors' preferences, and the pages on the website that the visitor accessed or visited. The information is used to optimize the users' experience by customizing our web page content based on visitors' browser type and/or other information.
+Cookies and Web Beacons. Like any other website, nano-fatebook-agent uses 'cookies'. These cookies are used to store information including visitors' preferences, and the pages on the website that the visitor accessed or visited. The information is used to optimize the users' experience by customizing our web page content based on visitors' browser type and/or other information.
 
 Disclaimers
 -----------

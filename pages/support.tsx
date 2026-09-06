@@ -8,7 +8,7 @@ export default function SupportPage() {
         {String.raw`
 Need help? Email us at hello@sage-future.org. 
         
-[Back to Fatebook](/)
+[Back to nano-fatebook-agent](/)
         `}
       </ReactMarkdown>
     </div>

@@ -9,13 +9,13 @@ export default function BeeminderPage() {
     <div className="px-4 pt-12 lg:pt-16 mx-auto max-w-6xl">
       <NextSeo
         title="Beeminder"
-        description="Use Beeminder to track your Fatebook forecasts"
+        description="Use Beeminder to track your nano-fatebook-agent forecasts"
       />
       <div className="mx-auto prose">
-        <h2>Fatebook Beeminder integration</h2>
+        <h2>nano-fatebook-agent Beeminder integration</h2>
         <p>
           Want to build an ironclad habit of forecasting? Commit to making
-          regular forecasts on Fatebook using{" "}
+          regular forecasts on nano-fatebook-agent using{" "}
           <a
             href="https://www.beeminder.com"
             target="_blank"
@@ -29,14 +29,14 @@ export default function BeeminderPage() {
           <div className="bg-indigo-50 rounded-lg p-4">
             <h4 className="mt-0 mb-2">How it works</h4>
             <ol className="mt-0 mb-0">
-              <li>Copy your Fatebook user ID below</li>
+              <li>Copy your nano-fatebook-agent user ID below</li>
               <li>
                 <a
                   href="https://www.beeminder.com/fatebook?utm_source=fatebook"
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  Create a Beeminder goal with the Fatebook integration
+                  Create a Beeminder goal with the nano-fatebook-agent integration
                 </a>
               </li>
               <li>Paste your ID when setting up the goal</li>
