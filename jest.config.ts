@@ -14,6 +14,7 @@ const config: Config = {
   clearMocks: true,
   collectCoverage: false,
   coverageDirectory: "coverage",
+  testPathIgnorePatterns: ["<rootDir>/e2e/", "<rootDir>/node_modules/"],
   collectCoverageFrom: [
     "**/*.{js,jsx,ts,tsx}",
     "!**/node_modules/**",
