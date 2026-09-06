@@ -19,7 +19,9 @@ export default function ImportPage() {
     <div className="px-4 pt-12 lg:pt-16 mx-auto max-w-6xl">
       <NextSeo title="Import from PredictionBook" />
       <div className="prose mx-auto">
-        <h4>Import all your PredictionBook predictions to nano-fatebook-agent</h4>
+        <h4>
+          Import all your PredictionBook predictions to nano-fatebook-agent
+        </h4>
         {userId ? (
           <PredictionBookImport />
         ) : (

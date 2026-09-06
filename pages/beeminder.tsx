@@ -36,7 +36,8 @@ export default function BeeminderPage() {
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  Create a Beeminder goal with the nano-fatebook-agent integration
+                  Create a Beeminder goal with the nano-fatebook-agent
+                  integration
                 </a>
               </li>
               <li>Paste your ID when setting up the goal</li>

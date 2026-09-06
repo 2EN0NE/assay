@@ -323,7 +323,8 @@ export const questionRouter = router({
     .input(
       z.object({
         apiKey: z.string({
-          description: "Your nano-fatebook-agent API key. Get it at localhost:3000/api-setup",
+          description:
+            "Your nano-fatebook-agent API key. Get it at localhost:3000/api-setup",
         }),
         ...{
           ...zodExtraFilters.shape,

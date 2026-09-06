@@ -8,11 +8,7 @@ import { useRouter } from "next/router"
 import { ReactNode, useState } from "react"
 import { toast } from "react-hot-toast"
 import { api } from "../lib/web/trpc"
-import {
-  downloadBlob,
-  signInToFatebook,
-  useUserId,
-} from "../lib/web/utils"
+import { downloadBlob, signInToFatebook, useUserId } from "../lib/web/utils"
 import Footer from "./Footer"
 import NotificationsPopover from "./NotificationsPopover"
 import { PromptDialog } from "./ui/PromptDialog"
@@ -200,7 +196,11 @@ function useExportData() {
         alert("Nothing to export! Make some forecasts first?")
         return
       }
-      downloadBlob(data, "nano-fatebook-agent-forecasts.csv", "text/csv;charset=utf-8;")
+      downloadBlob(
+        data,
+        "nano-fatebook-agent-forecasts.csv",
+        "text/csv;charset=utf-8;",
+      )
     },
   })
 }

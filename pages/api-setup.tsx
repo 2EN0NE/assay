@@ -87,8 +87,8 @@ export default function ApiPage() {
           </div>
         )}
         <p>
-          You can use your API key to create nano-fatebook-agent questions just by going
-          this URL (separated onto multiple lines for readability):
+          You can use your API key to create nano-fatebook-agent questions just
+          by going this URL (separated onto multiple lines for readability):
         </p>
 
         <p className="bg-neutral-100 outline outline-neutral-300 outline-1 p-2 rounded-md break-words">
@@ -113,7 +113,11 @@ export default function ApiPage() {
           <br />
         </p>
 
-        <p>{"Note: a date by itself will default to a time of 00:00 in the UTC timezone, which may not be the date you intended in your local timezone.  You can pass an ISO 8601 datetime for localization; for example, 2025-01-01T00:00+00:00.  You can also add some optional parameters, here's an example:"}</p>
+        <p>
+          {
+            "Note: a date by itself will default to a time of 00:00 in the UTC timezone, which may not be the date you intended in your local timezone.  You can pass an ISO 8601 datetime for localization; for example, 2025-01-01T00:00+00:00.  You can also add some optional parameters, here's an example:"
+          }
+        </p>
 
         <p className="bg-neutral-100 outline outline-neutral-300 outline-1 p-2 rounded-md break-words">
           {"https://localhost:3000/api/v0/createQuestion"}
@@ -178,9 +182,9 @@ export default function ApiPage() {
         </p>
 
         <p>
-          You can use this to integrate nano-fatebook-agent with other tools, like iOS
-          shortcuts. If you create an integration, let us know and we can tell
-          other nano-fatebook-agent users about it!
+          You can use this to integrate nano-fatebook-agent with other tools,
+          like iOS shortcuts. If you create an integration, let us know and we
+          can tell other nano-fatebook-agent users about it!
         </p>
 
         <p>
@@ -195,8 +199,8 @@ export default function ApiPage() {
         <ul>
           <li>
             <Link href="https://github.com/GarretteBaker/obsidian-fatebook">
-              An Obsidian plugin to create and preview nano-fatebook-agent questions right
-              inside your editor
+              An Obsidian plugin to create and preview nano-fatebook-agent
+              questions right inside your editor
             </Link>
             {" - by D0TheMath"}
           </li>

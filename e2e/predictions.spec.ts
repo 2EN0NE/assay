@@ -18,7 +18,9 @@ async function getLatestSignInLink(): Promise<string> {
       const detail = await fetch(`${MAILPIT_API}/message/${msg.ID}`)
       const body = (await detail.json()) as { Text?: string; HTML?: string }
       const text = body.Text ?? body.HTML ?? ""
-      const m = text.match(/https?:\/\/localhost:3000\/api\/auth\/callback\/email[^\s"'<>]*/)
+      const m = text.match(
+        /https?:\/\/localhost:3000\/api\/auth\/callback\/email[^\s"'<>]*/,
+      )
       if (m) {
         return m[0].replace(/&amp;/g, "&")
       }
@@ -41,12 +43,20 @@ test("sign in with email magic link, create a prediction, and resolve it", async
   await page.goto(signInLink)
 
   // Should land back on the home page, signed in
-  await expect(page.getByText(/track your predictions|make better decisions/i)).toBeVisible()
+  await expect(
+    page.getByText(/track your predictions|make better decisions/i),
+  ).toBeVisible()
 
   // 2. Create a binary prediction
   const title = `E2E: will this test pass? (${Date.now()})`
-  await page.getByPlaceholder(/e\.g\.|predict|question/i).first().fill(title)
-  await page.getByRole("button", { name: /predict|create|submit/i }).first().click()
+  await page
+    .getByPlaceholder(/e\.g\.|predict|question/i)
+    .first()
+    .fill(title)
+  await page
+    .getByRole("button", { name: /predict|create|submit/i })
+    .first()
+    .click()
 
   // The question should now be visible on the page
   await expect(page.getByText(title)).toBeVisible()
