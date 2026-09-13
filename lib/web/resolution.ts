@@ -5,14 +5,31 @@ import {
   QuestionWithForecastsAndScores,
   QuestionWithScores,
 } from "../../prisma/additional"
-import { ScoreCollection, ScoreTuple, relativeBrierScoring } from "../_scoring"
+import { log, warn } from "../_log"
+import {
+  dropRelativeScores,
+  ScoreCollection,
+  ScoreTuple,
+  relativeBrierScoring,
+} from "../_scoring"
 import { filterToUniqueIds } from "../_utils_common"
 import prisma from "../prisma"
+import { endorsedForecasts, isRelativeScored } from "./calibration"
 import { createNotification } from "./notifications"
 import { getQuestionUrl } from "./question_url"
 
-async function dbResolveQuestion(questionid: string, resolution: Resolution) {
-  console.log(`      dbResolveQuestion ${questionid} - ${resolution}`)
+/** 结算证据（ADR-0004）：自行结算与提案被采纳时随结算一并写入。 */
+export type ResolutionEvidence = {
+  source?: string | null
+  rationale?: string | null
+}
+
+async function dbResolveQuestion(
+  questionid: string,
+  resolution: Resolution,
+  evidence?: ResolutionEvidence,
+) {
+  log(`      dbResolveQuestion ${questionid} - ${resolution}`)
   return await prisma.question.update({
     where: {
       id: questionid,
@@ -21,6 +38,12 @@ async function dbResolveQuestion(questionid: string, resolution: Resolution) {
       resolved: true,
       resolution: resolution,
       resolvedAt: new Date(),
+      ...(evidence
+        ? {
+            resolutionSource: evidence.source ?? null,
+            resolutionRationale: evidence.rationale ?? null,
+          }
+        : {}),
     },
     include: {
       user: true,
@@ -55,9 +78,7 @@ async function dbResolveNonExclusiveQuestionOption(
   resolution: Resolution,
   optionId: string,
 ) {
-  console.log(
-    `dbresolveNonExclusiveQuestionOption ${questionId} - ${resolution}`,
-  )
+  log(`dbresolveNonExclusiveQuestionOption ${questionId} - ${resolution}`)
   await prisma.questionOption.update({
     where: {
       id: optionId,
@@ -106,7 +127,7 @@ async function dbResolveExclusiveQuestionOption(
   questionId: string,
   resolution: string,
 ) {
-  console.log(`dbResolveQuestionOption ${questionId} - ${resolution}`)
+  log(`dbResolveQuestionOption ${questionId} - ${resolution}`)
 
   const question = await prisma.question.findUnique({
     where: {
@@ -185,10 +206,10 @@ export async function scoreOptionForecasts(
   question: Question,
   option: QuestionOptionWithForecastsAndScores,
 ) {
-  console.log(`updating questionScores for option id: ${option.id}`)
+  log(`updating questionScores for option id: ${option.id}`)
 
   if (option.questionScores) {
-    console.warn(
+    warn(
       "Warning: questionScores already existed for question being resolved. Deleting all previous questionScores.",
       { dscores: option.questionScores },
     )
@@ -226,7 +247,7 @@ export async function scoreOptionForecasts(
         },
       }),
     )
-    console.log(`  user id: ${id} with relative score ${relativeScore}`)
+    log(`  user id: ${id} with relative score ${relativeScore}`)
   }
   await prisma.$transaction(updateArray)
 }
@@ -235,10 +256,10 @@ export async function scoreForecasts(
   scoreArray: ScoreCollection,
   question: QuestionWithScores,
 ) {
-  console.log(`updating questionScores for question id: ${question.id}`)
+  log(`updating questionScores for question id: ${question.id}`)
 
   if (question.questionScores) {
-    console.warn(
+    warn(
       "Warning: questionScores already existed for question being resolved. Deleting all previous questionScores.",
       { dscores: question.questionScores },
     )
@@ -275,7 +296,7 @@ export async function scoreForecasts(
         },
       }),
     )
-    console.log(`  user id: ${id} with relative score ${relativeScore}`)
+    log(`  user id: ${id} with relative score ${relativeScore}`)
   }
   await prisma.$transaction(updateArray)
 }
@@ -285,6 +306,7 @@ export async function handleQuestionResolution(
   resolution: string,
   questionType: QuestionType,
   optionId?: string,
+  evidence?: ResolutionEvidence,
 ) {
   if (optionId) {
     const result = await dbResolveNonExclusiveQuestionOption(
@@ -308,7 +330,7 @@ export async function handleQuestionResolution(
     }
   }
 
-  console.log(`    handleQuestionResolution: ${questionId} ${resolution}`)
+  log(`    handleQuestionResolution: ${questionId} ${resolution}`)
   let resolutionValue: Resolution
 
   if (Object.values(Resolution).includes(resolution as Resolution)) {
@@ -317,12 +339,14 @@ export async function handleQuestionResolution(
     resolutionValue = Resolution.YES
   }
 
-  console.log(`resolutionValue: ${resolutionValue}`)
+  log(`resolutionValue: ${resolutionValue}`)
 
-  const question = await dbResolveQuestion(questionId, resolutionValue)
-  console.log(
-    `    handledUpdateQuestionResolution: ${questionId} ${resolution}`,
+  const question = await dbResolveQuestion(
+    questionId,
+    resolutionValue,
+    evidence,
   )
+  log(`    handledUpdateQuestionResolution: ${questionId} ${resolution}`)
 
   if (!optionId) {
     if (questionType === QuestionType.BINARY) {
@@ -364,23 +388,21 @@ export async function scoreQuestion(
   question: QuestionWithForecastsAndScores,
 ) {
   let scores: ScoreCollection = {}
+  // ADR-0018：判据判不出来（AMBIGUOUS）→ 没有样本可计，不产生任何分数、也不落库。
+  // 旧实现在这里给每个预测者造一条全零占位，而 `relativeScore = 0` 是 Brier 的
+  // 「满分」语义——一旦有人落库它，判不出来的题会把所有人排到第一。
   if (resolution != Resolution.AMBIGUOUS) {
-    console.log("Question is unambig")
-    scores = relativeBrierScoring(question.forecasts, question)
+    log("Question is unambig")
+    // ADR-0008：未背书的 agent 搜集样本不计入校准
+    scores = relativeBrierScoring(
+      endorsedForecasts(question.forecasts),
+      question,
+    )
+    // ADR-0002：非公共事实类不进入相对分（写库即为 relativeScore = null）
+    if (!isRelativeScored(question.oracleKind)) {
+      scores = dropRelativeScores(scores)
+    }
     await scoreForecasts(scores, question)
-  } else {
-    let uniqueIds = Array.from(new Set(question.forecasts.map((f) => f.userId)))
-    scores = uniqueIds
-      .map((id) => {
-        return {
-          [id]: {
-            absoluteBrierScore: 0,
-            relativeBrierScore: 0,
-            rank: 0,
-          } as ScoreTuple,
-        }
-      })
-      .reduce((a, b) => Object.assign(a, b), {})
   }
   return scores
 }
@@ -393,14 +415,21 @@ export async function scoreQuestionOptions(
   let scores: ScoreCollection = {}
 
   if (resolution !== Resolution.AMBIGUOUS) {
-    console.log("Question is unambiguous")
+    log("Question is unambiguous")
 
     const userScores: {
       [userId: string]: ScoreTuple & { count: number }
     } = {}
 
     for (const option of question.options) {
-      const tempScores = relativeBrierScoring(option.forecasts, option)
+      const optionScores = relativeBrierScoring(
+        endorsedForecasts(option.forecasts),
+        option,
+      )
+      // ADR-0002：非公共事实类的选项级分数也不带相对分
+      const tempScores = isRelativeScored(question.oracleKind)
+        ? optionScores
+        : dropRelativeScores(optionScores)
       await scoreOptionForecasts(tempScores, question, option)
 
       for (const [userId, score] of Object.entries(tempScores)) {
@@ -413,7 +442,8 @@ export async function scoreQuestionOptions(
           }
         }
         userScores[userId].absoluteBrierScore += score.absoluteBrierScore
-        if (score.relativeBrierScore !== undefined) {
+        // ADR-0002：null 表示「不参与相对分」——跳过它，而不是把 null 当 0 加进来
+        if (score.relativeBrierScore !== null) {
           userScores[userId].relativeBrierScore =
             (userScores[userId].relativeBrierScore || 0) +
             score.relativeBrierScore
@@ -425,7 +455,7 @@ export async function scoreQuestionOptions(
     for (const [userId, score] of Object.entries(userScores)) {
       if (!exclusive) {
         score.absoluteBrierScore /= score.count
-        if (score.relativeBrierScore !== undefined) {
+        if (score.relativeBrierScore !== null) {
           score.relativeBrierScore /= score.count
         }
       }
@@ -434,32 +464,58 @@ export async function scoreQuestionOptions(
       scores[userId] = finalScore
     }
 
-    const sortedUsers = Object.entries(scores).sort(
-      ([, a], [, b]) =>
-        (a.relativeBrierScore || 0) - (b.relativeBrierScore || 0),
-    )
+    if (isRelativeScored(question.oracleKind)) {
+      const sortedUsers = Object.entries(scores).sort(
+        ([, a], [, b]) =>
+          (a.relativeBrierScore || 0) - (b.relativeBrierScore || 0),
+      )
 
-    sortedUsers.forEach(([userId, score], index) => {
-      scores[userId] = {
-        ...score,
-        rank: index + 1,
-      }
-    })
-  } else {
-    let uniqueIds = Array.from(new Set(question.forecasts.map((f) => f.userId)))
-    scores = Object.fromEntries(
-      uniqueIds.map((id) => [
-        id,
-        {
-          absoluteBrierScore: 0,
-          relativeBrierScore: 0,
-          rank: 0,
-        } as ScoreTuple,
-      ]),
-    )
+      sortedUsers.forEach(([userId, score], index) => {
+        scores[userId] = {
+          ...score,
+          rank: index + 1,
+        }
+      })
+    } else {
+      // 非公共事实类：没有相对分可排，改按绝对分排
+      scores = dropRelativeScores(scores)
+    }
   }
 
   return scores
+}
+
+/**
+ * 重算一条**已结算**问题的分数（不重新结算、不改 `resolvedAt`）。
+ *
+ * 存在理由：背书可以发生在结算之后。若不重算，ADR-0008 承诺的「背书后才进校准」
+ * 会在这一路径上静默落空——界面上提示消失，分数却永远不补。
+ */
+export async function rescoreResolvedQuestion(
+  questionId: string,
+): Promise<void> {
+  const question = await prisma.question.findUnique({
+    where: { id: questionId },
+    include: {
+      forecasts: true,
+      questionScores: true,
+      options: {
+        include: { forecasts: true, questionScores: true },
+      },
+    },
+  })
+  if (!question?.resolved || !question.resolution) return
+
+  if (question.type === QuestionType.BINARY) {
+    await scoreQuestion(question.resolution, question)
+    return
+  }
+
+  await scoreQuestionOptions(
+    question.resolution,
+    question,
+    question.exclusiveAnswers ?? true,
+  )
 }
 
 export async function undoQuestionOptionResolution(optionId: string) {

@@ -10,7 +10,8 @@ type ForecastArray = {
 }
 
 export type ScoreTuple = {
-  relativeBrierScore: number | undefined
+  /** `null` 是「不参与相对分」的唯一表示（ADR-0002）——单预测者与 非公共事实类 都是它。 */
+  relativeBrierScore: number | null
   absoluteBrierScore: number
   rank: number
 }
@@ -28,6 +29,32 @@ export type DaysForecasts = {
 export type DayAvgForecast = {
   id: string
   avgForecast: number | undefined
+}
+
+/**
+ * ADR-0002：非公共事实类不进入相对分 / 排行榜。
+ *
+ * 抹掉相对分（写库后即为 `relativeScore = null`），并改为按绝对 Brier 排名——
+ * 读侧（`AVG(relativeScore)`、`relativeScore !== null` 过滤）本来就把 null 当作
+ * 「不参与」，因此这一处写入侧的修剪同时就是读侧的口径。
+ *
+ * **必须是 `null`，不能是 `undefined`**：Prisma 把 `undefined` 当作「跳过该字段」，
+ * 于是 create 看着对（列默认值 NULL）、update 却会把旧的相对分留在库里。
+ */
+export function dropRelativeScores(scores: ScoreCollection): ScoreCollection {
+  const byAbsoluteScore = Object.entries(scores).sort(
+    ([, a], [, b]) => a.absoluteBrierScore - b.absoluteBrierScore,
+  )
+
+  const absoluteOnly: ScoreCollection = {}
+  byAbsoluteScore.forEach(([userId, score], index) => {
+    absoluteOnly[userId] = {
+      relativeBrierScore: null,
+      absoluteBrierScore: score.absoluteBrierScore,
+      rank: index + 1,
+    }
+  })
+  return absoluteOnly
 }
 
 // TODO: this is way too long, refactor it
@@ -157,7 +184,11 @@ export function relativeBrierScoring(
     avgScoresPerUser[id] = {
       relativeBrierScore:
         uniqueIds.length === 1
-          ? undefined
+          ? // 只有一个预测者时没有可比对象——即「不参与相对分」。
+            // 写 null（而不是 undefined）：Prisma 把 undefined 当作「跳过该字段」，
+            // update 会把旧的相对分留住；上游迁移
+            // `20230517064514_set_single_forecaster_relative_scores_to_null` 也是这个口径。
+            null
           : averageForScoreResolution(
               relativeScoreTimeSeries[id],
               Math.floor(days),
