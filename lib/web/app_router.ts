@@ -5,6 +5,7 @@ import { sendEmailReadyToResolveNotification } from "./notifications"
 import { parseDecision } from "./llm_parse"
 import { backendAnalyticsEvent } from "../_utils_server"
 import prisma from "../prisma"
+import { agentRouter } from "./agent_router"
 import { feedbackRouter } from "./feedback_router"
 import { importRouter } from "./import_router"
 import { questionRouter } from "./question_router"
@@ -13,6 +14,7 @@ import { getClientBaseUrl } from "./trpc"
 import { publicProcedure, router } from "./trpc_base"
 
 export const appRouter = router({
+  agent: agentRouter,
   question: questionRouter,
   tags: tagsRouter,
   import: importRouter,

@@ -10,6 +10,7 @@ import {
 import { authOptions } from "../auth/[...nextauth]"
 
 import { getMostRecentForecastForUser } from "../../../lib/_utils_common"
+import { log } from "../../../lib/_log"
 
 interface Request extends NextApiRequest {
   query: {
@@ -115,7 +116,7 @@ const getQuestionPublicApi = async (req: Request, res: NextApiResponse) => {
   })
 
   if (!question) {
-    console.log(`question not found: ${questionId}, returning 404`)
+    log(`question not found: ${questionId}, returning 404`)
     return res.status(404).json({})
   }
 

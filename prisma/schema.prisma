@@ -23,18 +23,21 @@ model Workspace {
 }
 
 model Forecast {
-  id         Int             @id @default(autoincrement())
-  createdAt  DateTime        @default(now())
+  id         Int              @id @default(autoincrement())
+  createdAt  DateTime         @default(now())
   comment    String?
   forecast   Decimal
   profileId  Int?
   questionId String
+  provenance RecordProvenance @default(HUMAN)
+  endorsed   Boolean          @default(true)
+  endorsedAt DateTime?
   optionId   String?
-  option     QuestionOption? @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  option     QuestionOption?  @relation(fields: [optionId], references: [id], onDelete: Cascade)
   userId     String
-  profile    Profile?        @relation(fields: [profileId], references: [id], onDelete: Cascade, map: "Forecast_authorId_fkey")
-  question   Question        @relation(fields: [questionId], references: [id], onDelete: Cascade)
-  user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profile    Profile?         @relation(fields: [profileId], references: [id], onDelete: Cascade, map: "Forecast_authorId_fkey")
+  question   Question         @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model QuestionScore {
@@ -99,6 +102,16 @@ model Question {
   tournaments                  Tournament[]
   exclusiveAnswers             Boolean?                 @default(true)
   notifications                Notification[]
+  oracleKind                   PredictionOracleKind     @default(PUBLIC_FACT)
+  provenance                   RecordProvenance         @default(HUMAN)
+  // 结算判据：可证伪、在决策时冻结（ADR-0002）；自评类必须同时冻结评分锚点
+  resolutionCriteria           String?
+  scoringAnchor                String?
+  // 结算证据（ADR-0004）：自行结算与提案被采纳时写入，使「可核查来源」可结构化检索
+  resolutionSource             String?
+  resolutionRationale          String?
+  revisions                    Revision[]
+  proposals                    ResolutionProposal[]
 }
 
 model Tag {
@@ -238,6 +251,33 @@ enum Resolution {
   AMBIGUOUS
 }
 
+// 结算判据的类型，决定跟踪 Agent 的权限层级
+enum PredictionOracleKind {
+  PUBLIC_FACT
+  AGENT_OBSERVABLE
+  SELF_REPORT
+}
+
+// 记录的录入来源（ADR-0008 要求区分「自主搜集」与「依据人的明确指令」）
+enum RecordProvenance {
+  HUMAN
+  AGENT
+  AGENT_INSTRUCTED
+}
+
+// 待触达状态机
+enum DeliveryState {
+  PENDING
+  DELIVERED
+  NOT_NEEDED
+}
+
+enum ProposalStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
 // OAuth account, e.g. google - used by next-auth for web
 model Account {
   id                String  @id @default(cuid())
@@ -302,18 +342,56 @@ model Tournament {
 }
 
 model Notification {
-  id          String    @id @default(cuid())
-  createdAt   DateTime  @default(now())
-  emailSentAt DateTime?
-  title       String
-  content     String
-  url         String?
-  tags        String[]
-  read        Boolean   @default(false)
-  userId      String
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  questionId  String?
-  question    Question? @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  id            String        @id @default(cuid())
+  createdAt     DateTime      @default(now())
+  emailSentAt   DateTime?
+  title         String
+  content       String
+  url           String?
+  tags          String[]
+  read          Boolean       @default(false)
+  userId        String
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  questionId    String?
+  question      Question?     @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  deliveryState DeliveryState @default(PENDING)
+  deliveredAt   DateTime?
+  deliveredVia  String?
+
+  @@index([userId, deliveryState])
+}
+
+// 对已冻结字段（判据 / 期限 / 锚点）的修改留痕。首次 Forecast 之前
+// 的改动不算修订，因此不在本表留记录。
+model Revision {
+  id         String   @id @default(cuid())
+  createdAt  DateTime @default(now())
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  field      String
+  oldValue   String?
+  newValue   String?
+  reason     String?
+
+  @@index([questionId])
+}
+
+// 跟踪 Agent 提出的结算建议。公共事实类若无来源则不得直接结算，
+// 只能落入本表等待当事人确认。
+model ResolutionProposal {
+  id         String         @id @default(cuid())
+  createdAt  DateTime       @default(now())
+  questionId String
+  question   Question       @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  resolution Resolution
+  source     String?
+  rationale  String?
+  proposedBy String         @default("agent")
+  status     ProposalStatus @default(PENDING)
+  decidedAt  DateTime?
+
+  @@index([questionId])
+  @@index([status])
 }
 
 model Feedback {

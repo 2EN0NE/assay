@@ -7,14 +7,16 @@ import { expect, test } from "@playwright/test"
  */
 const MAILPIT_API = "http://localhost:8025/api/v1"
 
-async function getLatestSignInLink(): Promise<string> {
-  // Poll Mailpit for the most recent message containing a sign-in URL.
+async function getLatestSignInLink(email: string): Promise<string> {
+  // Poll Mailpit for the most recent message to this address containing a sign-in URL.
   for (let attempt = 0; attempt < 20; attempt++) {
-    const res = await fetch(`${MAILPIT_API}/messages?limit=5`)
+    const res = await fetch(`${MAILPIT_API}/messages?limit=20`)
     const data = (await res.json()) as {
       messages: { ID: string; To: { Address: string }[] }[]
     }
     for (const msg of data.messages ?? []) {
+      const toAddresses = (msg.To ?? []).map((t) => t.Address)
+      if (!toAddresses.includes(email)) continue
       const detail = await fetch(`${MAILPIT_API}/message/${msg.ID}`)
       const body = (await detail.json()) as { Text?: string; HTML?: string }
       const text = body.Text ?? body.HTML ?? ""
@@ -33,13 +35,16 @@ async function getLatestSignInLink(): Promise<string> {
 test("sign in with email magic link, create a prediction, and resolve it", async ({
   page,
 }) => {
+  // Use a unique email so each run gets an isolated account (no cross-run dirty data).
+  const email = `e2e+${Date.now()}@example.com`
+
   // 1. Sign in via email magic link
   await page.goto("/")
   await page.getByRole("button", { name: /log in|sign up/i }).click()
-  await page.getByPlaceholder(/email/i).fill("e2e@example.com")
+  await page.getByPlaceholder(/email/i).fill(email)
   await page.getByRole("button", { name: /sign in|continue|submit/i }).click()
 
-  const signInLink = await getLatestSignInLink()
+  const signInLink = await getLatestSignInLink(email)
   await page.goto(signInLink)
 
   // Should land back on the home page, signed in
@@ -60,4 +65,14 @@ test("sign in with email magic link, create a prediction, and resolve it", async
 
   // The question should now be visible on the page
   await expect(page.getByText(title)).toBeVisible()
+
+  // 3. Open the question and resolve it as YES
+  await page.getByRole("link", { name: title }).click()
+  await page.waitForURL(/\/q\//)
+
+  await page.getByRole("button", { name: "Resolve" }).click()
+  await page.getByRole("button", { name: "Yes", exact: true }).click()
+
+  // 4. The resolution is visible to the user (event log shows "Resolved")
+  await expect(page.getByText(/Resolved/).first()).toBeVisible()
 })

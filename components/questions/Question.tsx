@@ -15,6 +15,7 @@ import { QuestionWithStandardIncludes } from "../../prisma/additional"
 import { FormattedDate } from "../ui/FormattedDate"
 import { Username } from "../ui/Username"
 import { QuestionDetails } from "./QuestionDetails"
+import { AgentRecordPanel } from "./AgentRecordPanel"
 import { ResolveButton } from "./ResolveButton"
 import { UpdateableLatestForecast } from "./UpdateableLatestForecast"
 
@@ -246,6 +247,7 @@ export function Question({
             question={question}
             hideOthersForecastsIfSharedWithUser={alwaysExpand}
           />
+          <AgentRecordPanel question={question} />
         </Transition>
       </motion.div>
 
@@ -257,12 +259,20 @@ export function Question({
         defaultValue={getDateYYYYMMDD(question.resolveBy)}
         type="date"
         submitLabel="Save"
-        onSubmit={(newDateStr) => {
+        secondaryLabel={
+          question.forecasts.length > 0
+            ? "Reason (a revision is recorded — ADR-0012)"
+            : undefined
+        }
+        secondaryPlaceholder="Why is the resolution date changing?"
+        secondaryRequired={question.forecasts.length > 0}
+        onSubmit={(newDateStr, reason) => {
           const newDate = newDateStr ? new Date(newDateStr) : undefined
           if (newDate && !isNaN(newDate.getTime())) {
             editQuestion.mutate({
               questionId: question.id,
               resolveBy: newDate,
+              reason,
             })
           } else {
             const year = new Date(

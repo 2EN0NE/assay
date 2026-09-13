@@ -9,6 +9,7 @@ import {
 } from "../../../lib/_utils_common"
 import { backendAnalyticsEvent } from "../../../lib/_utils_server"
 import prisma from "../../../lib/prisma"
+import { log } from "../../../lib/_log"
 
 function getCookies() {
   /* Copied from:
@@ -105,7 +106,7 @@ export const authOptions: NextAuthOptions = {
       })
 
       if (createdUser.email) {
-        console.log("Subscribing to mailing list", createdUser.email)
+        log("Subscribing to mailing list", createdUser.email)
         void subscribeToMailingList(
           createdUser.email,
           createdUser.name || undefined,
@@ -216,7 +217,7 @@ export default async function auth(req: NextApiRequest, res: NextApiResponse) {
   // handle HEAD requests from Outlook SafeLink
   // https://next-auth.js.org/tutorials/avoid-corporate-link-checking-email-provider
   if (req.method === "HEAD") {
-    console.log("HEAD request, returning 200")
+    log("HEAD request, returning 200")
     return res.status(200).end()
   }
 

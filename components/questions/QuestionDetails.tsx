@@ -473,12 +473,20 @@ function EditQuestionOverflow({
         defaultValue={getDateYYYYMMDD(question.resolveBy)}
         type="date"
         submitLabel="Save"
-        onSubmit={(newDateStr) => {
+        secondaryLabel={
+          question.forecasts.length > 0
+            ? "Reason (a revision is recorded — ADR-0012)"
+            : undefined
+        }
+        secondaryPlaceholder="Why is the resolution date changing?"
+        secondaryRequired={question.forecasts.length > 0}
+        onSubmit={(newDateStr, reason) => {
           const newDate = newDateStr ? new Date(newDateStr) : undefined
           if (newDate && !isNaN(newDate.getTime())) {
             editQuestion.mutate({
               questionId: question.id,
               resolveBy: newDate,
+              reason,
             })
           } else {
             const year = new Date(

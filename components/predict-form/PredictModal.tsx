@@ -10,6 +10,7 @@ import {
   makeRichGoogleDocsLink,
 } from "../../lib/web/gdoc_rich_text"
 import { Predict } from "./Predict"
+import { log } from "../../lib/_log"
 
 export default function PredictModal() {
   const { data: session } = useSession()
@@ -37,7 +38,7 @@ export default function PredictModal() {
 
   function cancelPrediction() {
     setDefaultText("")
-    console.log("sending prediction_cancel to host")
+    log("sending prediction_cancel to host")
     sendToHost("prediction_cancel")
     setTimeout(() => setResetTrigger(true))
   }
@@ -69,6 +70,7 @@ export default function PredictModal() {
       prediction?: number
     }) => {
       // add query string
+      // pi-lens-ignore: unchecked-throwing-call
       const urlObj = new URL(url)
       urlObj.searchParams.append("ext", "1")
 

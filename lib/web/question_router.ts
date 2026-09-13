@@ -34,6 +34,7 @@ import {
   sendEmailUnbatched,
 } from "./notifications"
 import { getQuestionUrl } from "./question_url"
+import { missingRevisionReason, planRevisions } from "./revisions"
 import { Context, publicProcedure, router } from "./trpc_base"
 import {
   getHtmlLinkQuestionTitle,
@@ -1304,6 +1305,10 @@ export const questionRouter = router({
         questionId: z.string(),
         title: z.string().optional(),
         resolveBy: z.date().optional(),
+        resolutionCriteria: z.string().optional(),
+        scoringAnchor: z.string().optional(),
+        /** ADR-0012：变更已冻结字段时必须给出的理由，随修订一并留痕。 */
+        reason: z.string().optional(),
         apiKey: z.string().optional(),
         notes: z.string().optional(),
       }),
@@ -1313,36 +1318,83 @@ export const questionRouter = router({
     .mutation(async ({ input, ctx }) => {
       await getQuestionAssertAuthor(ctx, input.questionId, input.apiKey)
 
-      const question = await prisma.question.update({
-        where: {
-          id: input.questionId,
-        },
-        data: {
-          title: input.title,
-          resolveBy: input.resolveBy,
-          notes: input.notes,
-        },
-        include: {
-          forecasts: {
-            include: {
-              user: {
-                include: {
-                  profiles: true,
+      // ADR-0012：已冻结字段（判据 / 期限 / 锚点）可改但必留痕，且必须给出理由；
+      // 首次 Forecast 之前的改动不算修订——那时还没有信念可被污染。
+      // 快照 → 留痕 → 更新必须同事务，否则更新失败会留下并未发生的「修订」。
+      await prisma.$transaction(async (tx) => {
+        const before = await tx.question.findUniqueOrThrow({
+          where: { id: input.questionId },
+          select: {
+            resolveBy: true,
+            resolutionCriteria: true,
+            scoringAnchor: true,
+            _count: { select: { forecasts: true } },
+          },
+        })
+
+        const revisions = planRevisions(
+          before,
+          {
+            resolveBy: input.resolveBy,
+            resolutionCriteria: input.resolutionCriteria,
+            scoringAnchor: input.scoringAnchor,
+          },
+          before._count.forecasts,
+        )
+
+        if (revisions.length > 0) {
+          const missingReason = missingRevisionReason(revisions, input.reason)
+          if (missingReason) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: missingReason,
+            })
+          }
+
+          await tx.revision.createMany({
+            data: revisions.map((revision) => ({
+              questionId: input.questionId,
+              field: revision.field,
+              oldValue: revision.oldValue,
+              newValue: revision.newValue,
+              reason: input.reason,
+            })),
+          })
+        }
+
+        await tx.question.update({
+          where: {
+            id: input.questionId,
+          },
+          data: {
+            title: input.title,
+            resolveBy: input.resolveBy,
+            resolutionCriteria: input.resolutionCriteria,
+            scoringAnchor: input.scoringAnchor,
+            notes: input.notes,
+          },
+          include: {
+            forecasts: {
+              include: {
+                user: {
+                  include: {
+                    profiles: true,
+                  },
                 },
               },
             },
-          },
-          user: {
-            include: {
-              profiles: true,
+            user: {
+              include: {
+                profiles: true,
+              },
+            },
+            questionMessages: {
+              include: {
+                message: true,
+              },
             },
           },
-          questionMessages: {
-            include: {
-              message: true,
-            },
-          },
-        },
+        })
       })
 
       await backendAnalyticsEvent("question_edited", {
@@ -1632,7 +1684,7 @@ export async function emailNewlySharedWithUsers(
       const author = question.user.name || question.user.email
       const user = await prisma.user.findUnique({ where: { email } })
       if (user) {
-        await createNotification({
+        return await createNotification({
           userId: user.id,
           title: `${author} shared a prediction with you`,
           content: `${author} shared a prediction with you`,
@@ -1641,7 +1693,7 @@ export async function emailNewlySharedWithUsers(
           questionId: question.id,
         })
       } else {
-        await sendEmailUnbatched({
+        return await sendEmailUnbatched({
           to: email,
           subject: `${author} shared a prediction with you`,
           textBody: `"${question.title}"`,

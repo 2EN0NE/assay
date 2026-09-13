@@ -3,6 +3,7 @@ import { intlFormatDistance } from "date-fns"
 import { HTMLAttributes, ReactNode, useCallback } from "react"
 import { getDateYYYYMMDD } from "../../lib/_utils_common"
 import { InfoButton } from "./InfoButton"
+import { log } from "../../lib/_log"
 
 export function FormattedDate({
   date,
@@ -65,7 +66,7 @@ export function FormattedDate({
           : intlFormatDistance(date, new Date()),
       )
     } catch (e) {
-      console.error(e)
+      log(e)
       return <></>
     }
   }

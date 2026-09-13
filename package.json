@@ -16,7 +16,12 @@
     "studio": "prisma studio",
     "zip": "echo \"have you set isDev=false and incremented version num?\" && bash zip-extensions.sh",
     "prepare": "husky install",
-    "test": "LC_ALL=en-US jest"
+    "test": "LC_ALL=en-US jest",
+    "test:coverage": "LC_ALL=en-US jest --coverage",
+    "test:e2e": "playwright test",
+    "dev:e2e": "dotenv next dev -- -p 3000",
+    "agent": "dotenv -e .env -- tsx cli/index.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@floating-ui/react": "^0.26.17",
@@ -105,10 +110,11 @@
     "prisma": "^5.15.0",
     "tailwindcss": "^3.3.2",
     "ts-node": "^10.9.2",
+    "tsx": "^4.23.13",
     "typescript": "^5.4.5"
   },
   "lint-staged": {
-    "*.js": "eslint --cache --fix",
-    "*.{js,css,md}": "prettier --write"
+    "*.{js,ts,tsx}": "eslint --cache --fix",
+    "*.{js,ts,tsx,css,md}": "prettier --write"
   }
 }

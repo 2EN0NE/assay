@@ -1,20 +1,10 @@
-import { inferAsyncReturnType, initTRPC } from "@trpc/server"
-import { CreateNextContextOptions } from "@trpc/server/adapters/next"
-import { getServerSession } from "next-auth"
+import { initTRPC } from "@trpc/server"
 import { OpenApiMeta } from "trpc-openapi"
 import transformer from "trpc-transformer"
-import { authOptions } from "../../pages/api/auth/[...nextauth]"
+import type { Context } from "./context"
 
-export const createContext = async (opts: CreateNextContextOptions) => {
-  const session = await getServerSession(opts.req, opts.res, authOptions)
+export type { Context }
 
-  return {
-    session,
-    userId: session?.user?.id,
-  }
-}
-
-export type Context = inferAsyncReturnType<typeof createContext>
 const t = initTRPC.meta<OpenApiMeta>().context<Context>().create({
   transformer,
 })

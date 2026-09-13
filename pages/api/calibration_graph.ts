@@ -2,7 +2,9 @@ import { Forecast, QuestionType, Resolution } from "@prisma/client"
 import type { NextApiRequest, NextApiResponse } from "next"
 import ChartJSImage from "chart.js-image"
 import prisma from "../../lib/prisma"
+import { ENDORSED_ONLY } from "../../lib/web/calibration"
 import { getChartJsParams } from "../../lib/web/utils"
+import { log } from "../../lib/_log"
 
 export default async function handler(
   req: NextApiRequest,
@@ -29,7 +31,7 @@ export default async function handler(
     .width("550")
     .height("500")
 
-  console.log("Generated image")
+  log("Generated image")
 
   // send the image
   res.setHeader("Content-Type", "image/png")
@@ -68,6 +70,7 @@ export async function getBucketedForecasts(userId: string, tags?: string[]) {
               userId: {
                 equals: userId,
               },
+              ...ENDORSED_ONLY,
             },
           },
         },
@@ -98,6 +101,7 @@ export async function getBucketedForecasts(userId: string, tags?: string[]) {
               userId: {
                 equals: userId,
               },
+              ...ENDORSED_ONLY,
             },
           },
         },
@@ -107,6 +111,7 @@ export async function getBucketedForecasts(userId: string, tags?: string[]) {
           userId: {
             equals: userId,
           },
+          ...ENDORSED_ONLY,
         },
       },
     },

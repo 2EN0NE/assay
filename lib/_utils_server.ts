@@ -1,6 +1,7 @@
 import { DayOfTheWeek, Target, TargetType } from "@prisma/client"
 import fetch from "node-fetch"
 import { TEST_WORKSPACES } from "./_constants"
+import { log } from "./_log"
 import { prisma } from "./prisma"
 
 // tokenize a string into an array by splitting on sections
@@ -35,7 +36,7 @@ export async function backendAnalyticsEvent(
     process.env.NODE_ENV !== "production" ||
     (params.team && TEST_WORKSPACES.includes(params.team))
   ) {
-    console.log(
+    log(
       "Skipping analytics event because test workspace or not in production: ",
       name,
     )
@@ -43,7 +44,7 @@ export async function backendAnalyticsEvent(
   }
 
   if (!measurementId || !apiSecret) {
-    console.log(
+    log(
       "Missing g analytics measurement ID or API secret. (Ignore unless in production)",
     )
     return
@@ -69,7 +70,7 @@ export async function backendAnalyticsEvent(
     },
   )
   if (!res.ok) {
-    console.error("Error sending analytics event", res.text(), res)
+    log("Error sending analytics event", res.text(), res)
   }
 }
 

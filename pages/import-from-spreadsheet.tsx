@@ -5,6 +5,7 @@ import { toast } from "react-hot-toast"
 import { Questions } from "../components/Questions"
 import { api } from "../lib/web/trpc"
 import { getCsvIdPrefix, signInToFatebook, useUserId } from "../lib/web/utils"
+import { log } from "../lib/_log"
 
 export default function ImportFromSpreadsheetPage() {
   const userId = useUserId()
@@ -175,7 +176,7 @@ function CsvImporter() {
     <div className="py-12">
       <Importer<CsvRow>
         dataHandler={async (rows, { startIndex }) => {
-          console.log({ startIndex, rows })
+          log({ startIndex, rows })
           await importFromCsv.mutateAsync(rows)
         }}
         defaultNoHeader={false} // optional, keeps "data has headers" checkbox off by default

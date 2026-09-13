@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server"
+import { log } from "./_log"
 
 export async function validateSlackRequest(
   request: NextRequest,
@@ -39,7 +40,7 @@ export async function validateSlackRequest(
     )
     return isValid
   } catch (error) {
-    console.error("Error verifying HMAC ", error)
+    log("Error verifying HMAC ", error)
     return false
   }
 }

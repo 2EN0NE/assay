@@ -7,6 +7,7 @@ import prisma from "../prisma"
 import { importFromPredictionBook } from "./predictionbook"
 import { publicProcedure, router } from "./trpc_base"
 import { getCsvIdPrefix, getPredictionBookIdPrefix, hashString } from "./utils"
+import { log } from "../_log"
 
 export const importRouter = router({
   importFromPredictionBook: publicProcedure
@@ -43,7 +44,7 @@ export const importRouter = router({
         },
       })
 
-      console.log(`Deleted ${r.count} questions`)
+      log(`Deleted ${r.count} questions`)
 
       await backendAnalyticsEvent("delete_prediction_book_imports", {
         user: ctx.userId,
@@ -204,7 +205,7 @@ export const importRouter = router({
       },
     })
 
-    console.log(`Deleted ${r.count} questions`)
+    log(`Deleted ${r.count} questions`)
 
     await backendAnalyticsEvent("delete_csv_imports", {
       user: ctx.userId,

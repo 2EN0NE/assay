@@ -12,7 +12,7 @@ import React, { Fragment, useEffect, useRef, useState } from "react"
 interface PromptDialogProps {
   isOpen: boolean
   onClose: () => void
-  onSubmit: (value: string) => void
+  onSubmit: (value: string, secondary?: string) => void
   title: string
   description?: string
   defaultValue?: string
@@ -21,6 +21,10 @@ interface PromptDialogProps {
   cancelLabel?: string
   type?: "text" | "date"
   showCloseButtons?: boolean
+  /** 第二个输入框（例：修订理由）。只有给了 label 才渲染。 */
+  secondaryLabel?: string
+  secondaryPlaceholder?: string
+  secondaryRequired?: boolean
 }
 
 export function PromptDialog({
@@ -35,13 +39,18 @@ export function PromptDialog({
   cancelLabel = "Cancel",
   type = "text",
   showCloseButtons = true,
+  secondaryLabel,
+  secondaryPlaceholder = "",
+  secondaryRequired = false,
 }: PromptDialogProps) {
   const [value, setValue] = useState(defaultValue)
+  const [secondary, setSecondary] = useState("")
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (isOpen) {
       setValue(defaultValue)
+      setSecondary("")
       // Focus input on next tick after dialog opens
       setTimeout(() => inputRef.current?.focus(), 0)
     }
@@ -49,7 +58,7 @@ export function PromptDialog({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    onSubmit(value)
+    onSubmit(value, secondaryLabel ? secondary : undefined)
     onClose()
   }
 
@@ -117,6 +126,26 @@ export function PromptDialog({
                     )}
                     placeholder={placeholder}
                   />
+
+                  {secondaryLabel && (
+                    <div className="mt-3">
+                      <p className="mb-1 text-sm text-gray-500">
+                        {secondaryLabel}
+                      </p>
+                      <input
+                        type="text"
+                        value={secondary}
+                        required={secondaryRequired}
+                        onChange={(e) => setSecondary(e.target.value)}
+                        className={clsx(
+                          "w-full rounded-md border border-neutral-300 px-4 py-2",
+                          "focus:border-indigo-700 focus:outline-none focus:ring-1 focus:ring-indigo-700",
+                          "placeholder:text-neutral-400",
+                        )}
+                        placeholder={secondaryPlaceholder}
+                      />
+                    </div>
+                  )}
 
                   <div className="mt-6 flex justify-end gap-3">
                     {showCloseButtons && (

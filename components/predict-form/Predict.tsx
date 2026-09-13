@@ -25,6 +25,7 @@ import QuestionSuggestions from "./QuestionSuggestions"
 import { QuestionTypeSelect } from "./QuestionTypeSelect"
 import BinaryQuestion from "./question-types/BinaryQuestion"
 import MultiChoiceQuestion from "./question-types/MultiChoiceQuestion"
+import { log } from "../../lib/_log"
 
 type CreateQuestionMutationOutput = NonNullable<
   ReturnType<typeof api.question.create.useMutation>["data"]
@@ -128,6 +129,7 @@ export function Predict({
           SuperJSON.stringify({ ...data, tags: tagsPreview }),
         )
         if (embedded) {
+          // pi-lens-ignore: no-open-redirect
           window.open(fatebookUrl, "_blank")?.focus()
         } else {
           void signInToFatebook()
@@ -163,7 +165,7 @@ export function Predict({
           },
           {
             onError(error, variables, context) {
-              console.error("error creating multi-choice question: ", {
+              log("error creating multi-choice question: ", {
                 error,
                 variables,
                 context,
@@ -189,7 +191,7 @@ export function Predict({
           },
           {
             onError(error, variables, context) {
-              console.error("error creating binary question: ", {
+              log("error creating binary question: ", {
                 error,
                 variables,
                 context,

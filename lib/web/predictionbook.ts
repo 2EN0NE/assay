@@ -3,6 +3,7 @@ import { max } from "date-fns"
 import { scoreQuestion } from "./resolution"
 import prisma from "../prisma"
 import { getPredictionBookIdPrefix } from "./utils"
+import { log } from "../_log"
 
 interface PBUser {
   email: string
@@ -50,7 +51,7 @@ export async function importFromPredictionBook(
   predictionBookApiToken: string,
   fatebookUserId: string,
 ) {
-  console.log("Importing from PredictionBook")
+  log("Importing from PredictionBook")
 
   var page = 1
   var questions: PBQuestion[] = []
@@ -74,7 +75,7 @@ export async function importFromPredictionBook(
 
     page++
   }
-  console.log("Found ", questions.length, " questions for user ", user?.email)
+  log("Found ", questions.length, " questions for user ", user?.email)
 
   for (const question of questions) {
     const parts = {
@@ -149,7 +150,7 @@ export async function importFromPredictionBook(
     })
 
     if (upsertedQuestion.resolution && upsertedQuestion.resolvedAt) {
-      console.log("Scoring question ", upsertedQuestion.id)
+      log("Scoring question ", upsertedQuestion.id)
       await scoreQuestion(upsertedQuestion.resolution, upsertedQuestion)
       // update all the question scores to have the same created at as the question
       await prisma.questionScore.updateMany({
@@ -160,7 +161,7 @@ export async function importFromPredictionBook(
           createdAt: upsertedQuestion.resolvedAt,
         },
       })
-      console.log("Scored question ", upsertedQuestion.id)
+      log("Scored question ", upsertedQuestion.id)
     }
   }
 }

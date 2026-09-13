@@ -1,6 +1,7 @@
 import { Question, User } from "@prisma/client"
 import { ServerClient } from "postmark"
 import { postmarkApiToken } from "../_constants"
+import { log as logToStderr, warn } from "../_log"
 import { backendAnalyticsEvent } from "../_utils_server"
 import prisma from "../prisma"
 import { getQuestionUrl } from "./question_url"
@@ -169,11 +170,11 @@ export async function sendEmailWithTemplateUnbatched({
     },
   })
   if (user?.unsubscribedFromEmailsAt) {
-    log && console.log(`Not sending email to ${to} because they unsubscribed`)
+    log && logToStderr(`Not sending email to ${to} because they unsubscribed`)
     return
   }
 
-  log && console.log("Sending email...")
+  log && logToStderr("Sending email...")
   const client = new ServerClient(postmarkApiToken)
   let response
   try {
@@ -196,7 +197,7 @@ export async function sendEmailWithTemplateUnbatched({
       )
     ) {
       log &&
-        console.warn(
+        warn(
           `Warning: Attempted to send to inactive recipient(s). Continuing...`,
         )
     } else {
@@ -205,9 +206,9 @@ export async function sendEmailWithTemplateUnbatched({
   }
 
   if (response?.ErrorCode) {
-    log && console.error(`Error sending email: ${JSON.stringify(response)}`)
+    log && logToStderr(`Error sending email: ${JSON.stringify(response)}`)
   } else {
-    log && console.log(`Sent email to ${to} with template: ${templateAlias}`)
+    log && logToStderr(`Sent email to ${to} with template: ${templateAlias}`)
     await backendAnalyticsEvent("email_sent", { platform: "web" })
   }
 }
@@ -231,11 +232,11 @@ export async function sendEmailUnbatched({
     },
   })
   if (user?.unsubscribedFromEmailsAt) {
-    log && console.log(`Not sending email to ${to} because they unsubscribed`)
+    log && logToStderr(`Not sending email to ${to} because they unsubscribed`)
     return
   }
 
-  log && console.log("Sending email...")
+  log && logToStderr("Sending email...")
   const client = new ServerClient(postmarkApiToken)
   let response
   try {
@@ -261,7 +262,7 @@ export async function sendEmailUnbatched({
       )
     ) {
       log &&
-        console.warn(
+        warn(
           `Warning: Attempted to send to inactive recipient(s). Continuing...`,
         )
     } else {
@@ -270,9 +271,9 @@ export async function sendEmailUnbatched({
   }
 
   if (response?.ErrorCode) {
-    log && console.error(`Error sending email: ${JSON.stringify(response)}`)
+    log && logToStderr(`Error sending email: ${JSON.stringify(response)}`)
   } else {
-    log && console.log(`Sent email to ${to}`)
+    log && logToStderr(`Sent email to ${to}`)
     await backendAnalyticsEvent("email_sent", { platform: "web" })
   }
 }
