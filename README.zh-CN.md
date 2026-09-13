@@ -1,158 +1,133 @@
-# [Fatebook](https://fatebook.io)
+# nano-fatebook-agent
 
 [English](./README.md) | [中文](./README.zh-CN.md)
 
-制作和追踪预测的最快方式。
+一个 **Agent 原生的决策质量提升系统**。它在日常对话中捕获决策，把隐含的信念显性化为可结算的概率预测，并长期追踪，从而把**决策质量**与**结果质量**分开。
 
-此仓库包含 [fatebook.io](https://fatebook.io)、[Fatebook for Slack](https://fatebook.io/for-slack) 和 [Fatebook for Chrome](https://fatebook.io/extension)。
+> 由 [Fatebook](https://fatebook.io)（预测追踪 + 校准）fork 而来。上游的 Slack / Discord / Chrome 扩展 / 锦标赛 / 团队功能均已移除。
 
-你可以在 [Issues](https://github.com/Sage-Future/fatebook/issues) 中报告 bug，或在我们的 [Discord](https://discord.gg/mt9YVB8VDE) 中提出功能请求。
+## 它是什么，不是什么
 
-## 技术栈
+- **是**：一个由 AI Agent 在对话中驱动的个人决策日志 + 校准引擎。
+- **不是**：待办清单、笔记应用，或团队项目管理工具（团队决策卫生功能在路线图上，当前版本尚未实现）。
 
-- Prisma
-- Next.js
-- Vercel
-- Slack API
-- TRPC
-- Tailwind
+## 当前能力
 
-## 用户制作的集成
+### 预测追踪
 
-使用 [Fatebook API](https://fatebook.io/api-setup)，Fatebook 用户已创建以下集成：
+- `Question`（可验证命题：标题、类型、`resolveBy`）与 `Forecast`（概率值，带时间戳与可选评论）。
+- 一个问题保留**完整的预测时间序列**——你可以修改预测，历史不会被覆盖。
+- 评论、标签、问题备注。
+- 结算为 `YES` / `NO` / `AMBIGUOUS`，支持撤销。
 
-- [一个 Obsidian 插件，可在编辑器中直接创建和预览 Fatebook 问题](https://github.com/GarretteBaker/obsidian-fatebook)
-- [一个 iOS 快捷指令，用于创建 Fatebook 问题](https://www.icloud.com/shortcuts/25903acfcd3d4fd5bed31c2f50322928)
-- [一个 Alfred 工作流，用于创建 Fatebook 问题](https://github.com/Calebp98/alfred-fatebook-workflow)
-- [一个 Emacs 插件，用于创建 Fatebook 问题](https://github.com/sonofhypnos/fatebook.el)
+### 校准与评分
 
-在 [Discord](https://discord.gg/mt9YVB8VDE)分享你自己的 API 创作！
+- **Brier 分数**与**相对 Brier 分数**（相对同期其他预测者的中位数），以及排名。
+- **百分位**：与其他预测者比较。
+- **校准图**：把你的预测概率分桶，与实际结果频率对比。
+- 由 `TrackRecord` 组件在 `/`、`/stats`、`/user/[id]` 展示。
 
-## 贡献指南
+### 访问与本地开发
 
-如果你对贡献感兴趣，[告诉我们](https://github.com/Sage-Future/fatebook/issues)，我们可以帮助你快速上手——感谢你的贡献！
+- Email magic-link 登录（NextAuth），以及每用户 API key 供程序化访问。
+- 一条命令拉起本地环境（Docker Compose：PostgreSQL + Mailpit 邮件捕获）。
 
-以下说明假设你使用 macOS 和 Homebrew。
+### Agent 集成：CLI 是 Agent 的接口
 
-### 克隆仓库
+Agent 通过本地 CLI 读写决策记录，CLI 内部走 tRPC 的 `createCaller`，因此复用服务端同一套 zod 校验与业务逻辑（ADR-0015）。
 
 ```shell
-git clone https://github.com/Sage-Future/fatebook.git
-cd fatebook
+export FATEBOOK_AGENT_USER_EMAIL=you@example.com
+
+npm run --silent agent -- list-due                       # 已到期且未结算
+npm run --silent agent -- create-prediction \
+  --title "接这个 offer" --resolve-by 2026-04-01 \
+  --criteria "邮件中出现正式 offer 链接" --probability 70%
+npm run --silent agent -- list-unendorsed                # 尚未计入校准
+npm run --silent agent -- endorse --question-id <id>
+npm run --silent agent -- settle --question-id <id> --resolution YES --source <url>
+npm run --silent agent -- list-proposals                 # 结算提案
+npm run --silent agent -- list-deliveries                # 拉取式待触达队列
+npm run --silent agent -- report-delivery --notification-id <id> --outcome DELIVERED --channel telegram
+```
+
+- `--silent` 不可省：不加时 npm 会把自己的横幅写进 stdout，破坏"stdout 只放 JSON"的契约；`--help` 也走 stderr，理由相同。
+- Agent 写入的记录会标注录入来源，且 `AGENT`（自主搜集）默认**未背书**，须在界面背书后才计入校准（ADR-0008）。
+- `--instructed` 用于"数字是当事人自己给的"这类录入，它天然已背书。
+- `parseDecision`（`lib/web/llm_parse.ts`，Kimi）是有意**未接线**的：Agent 的接口就是 CLI，自然语言解析由 pi 侧承担。
+
+### 质量门禁
+
+- Jest 单元测试：计分（含"非公共事实类不进相对分"）、校准样本过滤、结算状态机、修订规划与理由校验、LLM 解析、CLI 参数解析、表单行为。
+- Playwright 端到端测试：人登录 → 创建 → 结算，以及 agent 经 CLI 写入 → 人在 Web 背书 / 确认提案。
+- CI 在每次 PR 上运行 lint + typecheck + 单元测试（带覆盖率阈值）+ e2e。
+
+## 愿景：Agent 原生的决策卫生
+
+目标是让 Agent 成为主要的**捕获入口**：
+
+1. **捕获**——Agent 在对话中察觉用户正面临一个决策。
+2. **拆解**——把决策拆成其中真正**可预估**的部分（可结算命题）。
+3. **追问**——向用户索取模糊表述背后的具体置信度数字（"我觉得能成" → "六成还是八成？什么时候前？"）。
+4. **记录**——带着明确的结算标准持久化这些预测。
+5. **校准**——结果揭晓后进入校准与评分闭环。
+6. **矫正**——用决策卫生工具（事前剖析、杀死标准、尤利西斯合同、名义群体、寻真小组）改进**过程**，而不只是分数。
+
+**记录与跟踪是分离的。** 记录 Agent 在对话内工作，只负责把决策与预测写下来——结算判据、结算标准与评分锚点在决策时冻结。跟踪委托给**独立上下文中的另一个 Agent**，因此事后重新解释"当初的意思"无法渗入结算。
+
+### 核心原则
+
+1. **区分决策质量与结果质量。** 好过程也会因运气得到坏结果；克制 `Resulting`（以结果反推决策优劣）。
+2. **一切决策都是押注。** 每个选择都在信息不完整下投入稀缺资源。
+3. **概率思维与信念标定。** 用概率分布替代"确定"，并对新证据保持开放。
+4. **放弃同样是一种美德。** 坚持与放弃是同一决策的两面；新的不利信号使放弃成为义务。
+5. **保护"未来的自己"。** 用未来的反馈约束当下的短视（对抗当下偏见）。
+
+阶段计划与待定设计决策见 [`docs/roadmap.md`](./docs/roadmap.md)。
+
+## 快速开始（Docker）
+
+```shell
 cp .env.example .env
+docker compose up
 ```
 
-### 为本地主机创建 TLS 证书
+应用地址 <http://localhost:3000>。数据库自动创建，迁移在启动时执行。
+
+**登录：** 使用 email magic link。Docker Compose 内置 [Mailpit](https://mailpit.axllent.org/) 作为本地邮件捕获器——打开 <http://localhost:8025> 查看登录邮件，无需 SMTP 账号。
+
+## 开发
 
 ```shell
-brew install mkcert
-mkcert -install
-mkcert localhost
+npm install
+npx prisma generate --no-hints
+npm run dev          # 开发服务器（3005，SSL 代理 → 3000）
+npm test             # Jest 单元测试
+npm run test:coverage
+npm run lint         # ESLint
+npm run format       # Prettier
+npm run studio       # Prisma Studio
 ```
 
-### 设置数据库
+端到端测试（需要 Docker 提供 Postgres + Mailpit）：
 
 ```shell
-brew install postgresql@15
-# 或者从 https://www.postgresql.org/download 下载并安装
-# 如果你这样做，请按照其中关于启动数据库的说明操作
-
-# 按照安装程序提供的说明将 postgresql@15 添加到你的 PATH
-# 例如，在某些系统上它会告诉你这样做：
-echo 'export PATH="/opt/homebrew/opt/postgresql@15/bin:$PATH"' >> ~/.zshrc
-. ~/.zshrc
-
-# 如果你使用 Bash 而不是 Z shell，请将上述命令中的 `~/.zshrc` 替换为 `~/.bash_profile`
-
-# 启动 postgres
-LC_ALL="C" /opt/homebrew/opt/postgresql@15/bin/postgres -D /opt/homebrew/var/postgresql@15
+docker compose up -d db mail
+cp .env.example .env
+npx playwright install chromium
+npm run test:e2e
 ```
 
-打开一个新的终端窗口并运行以下命令：
+## 项目文档
 
-```shell
-# 创建 `fatebook` 角色
-createuser fatebook
+| 文档                                   | 内容                           |
+| -------------------------------------- | ------------------------------ |
+| [`CONTEXT.md`](./CONTEXT.md)           | 统一语言 / 术语表              |
+| [`docs/roadmap.md`](./docs/roadmap.md) | 阶段计划 + 待定决策            |
+| [`docs/adr/`](./docs/adr/)             | 架构决策记录                   |
+| [`knowledge/`](./knowledge/)           | 工程笔记（部分为 fork 前遗留） |
+| [`AGENTS.md`](./AGENTS.md)             | AI Agent 工作约定              |
 
-# 创建 `fatebook_development` 数据库，由 `fatebook` 用户拥有
-createdb fatebook_development --owner fatebook
-```
+## License
 
-1. 运行 `npm install` 安装依赖。
-2. 运行 `npm run vercel-build` 设置 Fatebook 数据库模式。
-
-### 启动服务器
-
-1. 运行 `npm run dev`。
-2. 访问 https://localhost:3000。你应该能够登录并创建预测。
-
-### 运行测试
-
-使用 `npm run test` 运行 Jest 测试。
-
-你还可以通过运行 `npm run test -- --coverage` 生成覆盖率报告，报告将打印到控制台并保存到 `coverage/` 目录。查看它的最佳方式是在 `coverage/lcov-report/index.html` 中的 HTML 格式（运行 `open coverage/lcov-report/index.html`）。
-
-### 在 VSCode 调试器中运行
-
-有一个用于 VSCode/Cursor 的启动配置叫做 "Next.js: debug fatebook full stack"，可以在调试器中运行 Web 应用（前端和后端，断点可以在客户端或 SSR 期间工作）。
-
-### 开发 Fatebook 浏览器扩展
-
-Fatebook 有 Chrome 和 Firefox [扩展](https://fatebook.io/extension)。源代码在 [/chrome-extension](https://github.com/Sage-Future/fatebook/tree/main/chrome-extension) 中
-
-测试 Chrome 扩展的更改：
-
-1. 按照上述一般 Fatebook 开发设置步骤操作
-2. 在 `after.js` 中，确保 `extensionInfo.isDev = true`
-3. 运行 `npm run dev`，并检查你的开发服务器是否在 https://localhost:3000 运行
-4. 转到 `chrome://extensions`
-5. 如果你已安装生产版 Fatebook 扩展，请将其禁用
-6. 选择 "Load unpacked"，然后选择 chrome-extension 目录
-7. 在 `chrome://extensions/shortcuts` 中，将 "Make a new prediction" 的快捷方式设置为 Cmd-Shift-F（如果尚未设置）
-8. 提交之前，确保 `after.js` 中的 `extensionInfo.isDev = false`
-
-如果你更改了 `chrome-extension` 中文件的内容，要在你的浏览器中看到更改，你需要重新加载扩展：
-
-1. 转到 `chrome://extensions`
-2. 点击 Fatebook for Chrome 卸载版本旁边的刷新按钮
-3. 在要测试扩展的任何标签页中刷新
-
-对 Fatebook 本身的更改（例如对 `/pages/embed/q/[id].tsx` 的更改）将自动反映，无需重新加载扩展。
-
-<details>
-  <summary>发布 Chrome 扩展更新</summary>
-
-贡献者——维护者将测试并部署你的更改。
-
-维护者说明：
-
-1. 在 Chrome 和 Firefox 中本地测试更改
-2. 在 `after.js` 中设置 `extensionInfo.isDev = false`
-3. 部署对 fatebook.io 的更改，并使用生产环境测试你的本地卸载扩展
-4. 在 `manifest.json` 中增加 `version` 字段
-5. 运行 `npm run zip`
-6. 将 Chrome 扩展上传到 Web Store，将 Firefox 版本上传到 Mozilla 附加组件。通常审批需要 <24 小时
-
-</details>
-
-### 附录
-
-如果你想对 Slack 集成进行更改或测试，你需要设置一个 Slack 应用。这比较复杂——[联系我们](https://github.com/Sage-Future/fatebook/issues)，我们会帮助你完成设置。
-
-<details>
-  <summary>可选附加步骤：或者设置你自己的 Google OAuth 凭据</summary>
-
-你的 `.env.example` 已预填充了共享的 Fatebook 开发人员 Google OAuth 凭据。如果你想要创建自己的凭据（例如要更改配置），请按照以下步骤操作：
-
-1. 转到 https://console.cloud.google.com/apis/credentials。
-2. 点击 <kbd>配置项目</kbd>。（或者，如果你之前创建过项目，点击 <kbd>你的项目</kbd> -> <kbd>新项目</kbd> -> 选择你的新项目）
-3. 点击 <kbd>创建凭据</kbd>。
-4. 选择 `OAuth 客户端 ID`。
-5. 你可能需要按照 "创建同意屏幕" 中的说明操作——选择所有非敏感范围。然后再次尝试步骤 3-4。
-6. 对于 `应用程序类型`，选择 `Web 应用程序`。
-7. 在 `名称` 中输入类似 `Fatebook development` 的内容。
-8. 在 `授权重定向 URI` 中，点击 <kbd>添加 URI</kbd>，在 `URI 1` 中输入 `https://localhost:3000/api/auth/callback/google`。
-9. 打开 `fatebook` 仓库根目录中的 `.env` 文件。将 `客户端 ID` 值复制并粘贴到 `fatebook/.env` 中的 `GOOGLE_CLIENT_ID=` 后面，同样对 `客户端密钥` 和 `GOOGLE_CLIENT_SECRET=` 进行相同操作。
-</details>
-
-如果你有任何问题，[告诉我们](https://github.com/Sage-Future/fatebook/issues)！
+MIT

@@ -737,3 +737,89 @@ If you make a mistake later, you can always use `git revert` or `git reset` to f
 - The dev server runs on **port 3005** with SSL proxy to port 3000
 - ESLint is configured to require explicit return types on complex functions
 - Prettier uses **no semicolons**
+
+---
+
+## 验证规范（agent 记录层）
+
+本节是"agent 化改造"新增能力的**验证契约**。改动这一层之前先读它——这里的每一条都对应一个已定 ADR，破坏它们等于静默推翻决策。
+
+### 权威判据是 `tsc`，不是语言服务器
+
+**`npx tsc --noEmit`（或 `npm run typecheck`）是唯一权威的类型判据。**
+
+本仓库存在一个反复出现的环境陷阱：`prisma generate` 之后，tsserver 仍持有 `@prisma/client` 的**陈旧缓存**，于是 IDE / pi-lens 会报出一批 `Property 'oracleKind' does not exist on type 'PrismaClient<PrismaClientOptions, never, DefaultArgs>'` 之类的错误——注意那个 `never`，它是**生成前的 stub 类型**的特征。
+
+分辨方法（三条缺一不可，成本极低）：
+
+1. `npx tsc --noEmit --listFiles | grep <文件>` —— 确认文件**真的在 tsc 的 program 里**，否则 exit 0 不能作为证据；
+2. `npx tsc --noEmit` —— 独立进程，新鲜解析；
+3. `grep -c <字段> node_modules/.prisma/client/index.d.ts` —— 确认生成产物里确实有该字段。
+
+判据是"文件在 program 内 + tsc 干净 + 字段存在于生成产物"。三条同时成立即为陈旧缓存，重跑 `prisma generate` 或重启语言服务器即可，**不要改代码去迎合它**。
+
+### 分层验证命令
+
+| 层                    | 命令                | 前置                                                               |
+| --------------------- | ------------------- | ------------------------------------------------------------------ |
+| 类型                  | `npm run typecheck` | 无                                                                 |
+| Lint                  | `npm run lint`      | 无                                                                 |
+| 单元 / 组件           | `npm test`          | 无                                                                 |
+| 端到端（agent → Web） | `npm run test:e2e`  | `docker compose up -d db mail` + `npx playwright install chromium` |
+
+### 可观测性契约
+
+- **CLI 的 stdout 是数据通道，只放 JSON；一切日志走 stderr。** 这是对 Agent 的公开契约（ADR-0015）。Prisma 默认把 `info` 写到 stdout，足以让下游 `JSON.parse` 崩掉——因此 `lib/prisma.ts` 用 event 模式接管输出，统一改道 stderr。**新增任何会写 stdout 的库之前，先确认它的输出去哪儿。**
+- **调用 CLI 必须用 `npm run --silent agent -- …`**。不加 `--silent` 时 npm 会把自己的横幅（`> agent` / `> dotenv …`）写进 stdout，实测直接破坏上面那条契约；`--help` 同理走 stderr。
+- **CLI 可达的代码用 `lib/_log.ts` 的 `log`（走 stderr），不要用 `console.log`**。`lib/web/resolution.ts`、`lib/_utils_server.ts`、`lib/web/notifications.tsx` 的 `console.log` 已全部改道（`settle` / `endorse` 会走计分路径，实测曾把 stdout 污染成不可解析）。CLI 边界另有一道守卫（`cli/args.ts` 的 `installStdoutGuard`）：非 `emitJson` 的 stdout 写入会**当场抛错**，而不是留给下游 `JSON.parse`。
+- **校准排除只有一个定义处**：`lib/web/calibration.ts`。任何读取 forecast 做计分或画校准图的地方都必须经过它（ADR-0008）。新增计分入口时若不经过它，未背书样本会静默污染校准曲线，且**没有任何症状**。
+- **相对分资格同在 `lib/web/calibration.ts`**（ADR-0002 的 `isRelativeScored`）：非公共事实类由**写入侧**把 `relativeScore` 写成 `null`（`lib/_scoring.ts` 的 `dropRelativeScores`），**读侧一律把 null 当"不参与相对分"**（`AVG` 忽略 null、聚合处 `!== null` 过滤）。新增计分或排行榜聚合时不要自行判断 `oracleKind`，也不要把 null 当成 0。
+  - **「不参与相对分」只有 `null` 一个表示**（ADR-0002 的落地面）。单预测者与 非公共事实类 都归到它。**`undefined` 会被 Prisma 当作"跳过该字段"**——create 看着对（列默认 NULL），update 却把旧的相对分留在库里，因此 `ScoreTuple.relativeBrierScore` 的类型是 `number | null`，不是 `number | undefined`。
+  - `RELATIVE_SCORED_ONLY` 是同一规则的 Prisma `where` 形式，**当前没有消费者**（过滤发生在写入侧）。**不要为了"用上它"而新增查询侧过滤。**
+- **修订留痕的判定是纯函数**：`lib/web/revisions.ts` 的 `planRevisions` 与 `missingRevisionReason`。写入路径（`question_router.editQuestion`）只负责取快照、校验理由与同事务落库。新增"已冻结字段"时改这个常量数组，而不是散落地加 if。
+
+### 端到端测试保护的是哪条路径
+
+`e2e/agent-cli.spec.ts` 覆盖的**唯一**值得保护的路径：**agent 经 CLI 写入 → 人在 Web 上看到 → 人背书 / 确认**。
+
+- 先跑 CLI 再开页面，是为了证明 CLI **不依赖 Next.js 服务**（ADR-0015 的核心承诺）。
+- 断言"未背书"标记与背书按钮，是为了让 ADR-0007（人工 UI 是最高权威输入源）不沦为空话——**如果 agent 写下的东西在界面上看不见、无法背书，"未背书不进校准"就是一条无法履行的规则。**
+- 断言"无来源的公共事实结算降级为提案"，是 ADR-0004 的行为锁。
+
+### 本地环境注意
+
+- 迁移可在**无数据库**时离线生成：`npx prisma migrate diff --from-schema-datamodel <旧> --to-schema-datamodel prisma/schema.prisma --script`。
+- 本地 CLI 与 e2e 都依赖 `.env`（被测仓库不含该文件，从 `.env.example` 复制）。CLI 的 owner 身份来自 `FATEBOOK_AGENT_USER_EMAIL`，**该邮箱必须已存在账号**（先在 Web 用 magic link 登录一次即可创建）。
+- macOS 无 `timeout` 命令；`sed -i` 需要空参数 `sed -i ''`。
+
+---
+
+## 概率显性化（对话层）
+
+本节管"当事人嘴里的说法"如何变成一个 `Forecast` 的概率数字。术语见 `CONTEXT.md` 的 `Elicitation / 概率显性化`，问法见 `.pi/skills/decision-capture/SKILL.md` 第 3 步。
+
+- **基准：模糊的正确优于精确的错误。** 不要为了形式整齐拒绝一个粗粒度回答（"满分 10 分里的 8 分"），也不要因为一个数字"太精确"就改写它——精度本身携带信息。
+- **口语与量表回答必须折算为概率。** "七成"→0.7、10 分制的 8 分→0.8、转盘上 65% 才肯下注→候选 0.65。它们是**同一信念的不同表示**，不是另一个量；`Forecast` 只存概率。
+- **判据是"换算是否无损"。** 无损（换表示）→ 可直接落库；有损（需额外假设）→ 必须**复述给当事人确认**后再落库。
+- **否定检验只能用命题的逻辑否定。** "明天不下雨"是"明天下雨"的否定；"天晴"不是——雨 30% 与晴 10% 可由阴天 60% 补齐，因此二者**不构成矛盾**。用近义事件当否定会产生无根据的追问，而无根据的追问正是 `Compliance Number` 的来源。
+- **具体化量到的是偏好，不是信念。** 赌局同时测出风险偏好与赌注大小，其输出只是候选值，必须经当事人确认；**不得由 agent 按"风险中性"自行折算**。
+- **折算结果的录入来源（ADR-0008）：** 直接说出的百分比、量表折算结果、经确认的具体化候选值，都算"数字由当事人给出"（`AGENT_INSTRUCTED`，默认已背书）；只有 agent 自己产生、当事人从未说过的数字才是 `--agent-collected`。
+
+---
+
+## 日志体系
+
+日志只有一个出口（`lib/_log.ts`），stdout 只归数据。这条契约的破坏方式是**静默的**：一行 `console.log` 会让下游 `JSON.parse` 崩在一个离案发现场很远的地方。
+
+| 出口               | 位置          | 通道       | 放什么                                                                                                   |
+| ------------------ | ------------- | ---------- | -------------------------------------------------------------------------------------------------------- |
+| `emitJson()`       | `cli/args.ts` | **stdout** | CLI 的**数据**。唯一合法写入者，由 `installStdoutGuard()` 守卫——非 `emitJson` 的 stdout 写入**当场抛错** |
+| `log()` / `warn()` | `lib/_log.ts` | **stderr** | 其它一切：诊断、警告、CLI 的用户可见输出、Prisma 事件、`--help` 文本                                     |
+
+- **项目代码不要直接调用 `console.*`**，用 `lib/_log.ts` 的 `log` / `warn`。ESLint 的 `no-console` 就是这条契约的执行者（`.eslintrc.json`；`lib/_log.ts` 自身与测试文件豁免）。注意现有 `lint` 脚本只覆盖 `lib/ pages/ components/`——**`cli/` 不在其中**，改了 CLI 要自己看一眼。
+- **`log` 用 `console.error`、`warn` 用 `console.warn`，这是刻意的**：Node 里**只有这两个方法写 stderr**，`console.log` / `console.info` 写的是 stdout。浏览器里它们仍是普通 console 方法，行为不变。
+- **需要上下文时把来源写进消息本身**（例如 `prisma:info …`），不靠前缀约定。早先 CLI 有一套自己的 `log` 实现与 `[agent]` 前缀，已删除——**两套实现比少一个前缀糟得多**。`lib/prisma.ts` 的 event 订阅、`--help` 文本、CLI 的用户可见输出现在都经同一个出口。
+- **新增任何会写输出的库之前，先确认它的输出去哪儿。** Prisma 默认把 `info` 写到 stdout（足以让下游 `JSON.parse` 崩掉），现由 `lib/prisma.ts` 的 event 模式接住并统一改道。
+- **验证（两条，缺一不可）**：
+  - `npm run --silent agent -- list-due | jq .` —— stdout 必须**可解析**。不加 `--silent` 时 npm 会把自己的横幅写进 stdout，同样破坏契约。
+  - `npm run --silent agent -- --help >/dev/null` —— `--help` 必须走 stderr（stdout 字节数为 0）。

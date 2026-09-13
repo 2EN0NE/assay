@@ -35,3 +35,115 @@
 - Phase 2: 品牌文案全面改名（QuickFeedback/notifications/页面标题里的 Fatebook → nano-fatebook-agent）
 - Phase 3（可选）: schema.prisma 的 Tournament/UserList/Workspace/SlackMessage model 深度裁剪
 - Phase 4: agent 化改造（概率校准 + 决策复盘 + LLM 交互层）
+
+## Session: 2026-09-06 测试保障修复
+
+### Completed
+
+- 新增 lib/web/resolution.test.ts：resolve/undo 状态机 + 计分持久化（scoreQuestion、scoreQuestionOptions exclusive/non-exclusive 平均+rank、undo 两分支、delete）
+- 扩展 lib/web/llm_parse.test.ts：extractJson 边界、buildParsePrompt、parseDecisionWithLlm、kimiLlmClient 错误路径（mock fetch）
+- 扩展 lib/_scoring.test.ts：median 相对计分（3 用户）、时间加权 forecast
+- 新增 components/predict-form/PredictModal.test.tsx：null message data 回归
+- e2e：补 resolve 步骤（创建→进入详情→Resolve→Yes→断言 Resolved），唯一邮箱隔离数据
+- CI：test.yml 拆分 unit（lint+jest）+ e2e（docker db/mail+migrate+playwright）job，npm ci、actions v4、node 20、artifact 上传
+- 本地门禁：lint-staged 覆盖 *.ts/*.tsx，jest.config.ts 加 coverageThreshold，playwright webServer 改 HTTP dev:e2e
+- 修复 question_router.ts 孤儿变量（b13e585 删 Slack 集成遗留，阻塞 lint 门禁）
+
+### Key Decisions
+
+- Decision: e2e 数据隔离用唯一邮箱（e2e+${Date.now()}@example.com）而非 afterEach 清理
+- Rationale: 清理需 tRPC 协议 + author 权限，复杂且难验证；唯一账号天然隔离，Playwright 拿不到 DB 直连
+- Decision: e2e webServer 改用 HTTP（next dev -p 3000）而非 ssl-proxy
+- Rationale: Playwright baseURL 是 http://localhost:3000，ssl-proxy 提供 HTTPS 导致协议不匹配；email magic link 无需 HTTPS
+- Decision: resolution.test.ts 用 jest.mock 掉 notifications/question_url 而非真实加载
+- Rationale: 这两个模块的依赖链（node-fetch、trpc-transformer→superjson）是 ESM，在 jsdom 下无法加载
+
+### Lessons Learned
+
+- jest jsdom 下 mock 依赖链（notifications→_utils_server→node-fetch ESM）要用 factory 提供 mock，automock 仍会加载原始模块
+- _scoring.ts 的 brierScore = 2*(f-truth)^2，单用户 absolute 精确可断言；多用户 median 相对分 = absolute - median
+- scoreQuestionOptions 的 AMBIGUOUS 分支遍历 question.forecasts（非 options），测试构造需给 question.forecasts
+- lint-staged 原配置只匹配 *.js，TS 代码库完全不进 pre-commit；修复为 *.{js,ts,tsx}
+- ESLint no-unused-vars 能抓重构遗留孤儿变量，应进 CI 门禁
+
+### Next Steps
+
+- e2e 需真实环境验证：docker compose up -d db mail + npx playwright install chromium + npm run test:e2e
+- CI 需 GitHub 设置 required status checks + 分支保护（仓库外配置）
+- 后续可补：llm_parse 的 parseDecision tRPC 端点集成测试（publicProcedure 未认证 + 真实 Kimi API 的成本/滥用风险）
+
+## Session: 2026-09-12 agent 捕获闭环实现（Phase 1 MVP）
+
+### Completed
+
+- 决策阶段收尾：17 个 ADR（docs/adr/）、CONTEXT.md 领域词典、roadmap Open Decisions 清空
+- tickets 落盘：.scratch/agent-capture-mvp/issues/01..08
+- prefactor：createContext 移出 trpc_base（lib/web/context.ts），使 createCaller 可在纯 node 下工作
+- schema：Question.oracleKind/provenance/resolutionCriteria/scoringAnchor、Forecast.provenance/endorsed/endorsedAt、Notification.deliveryState 状态机、Revision、ResolutionProposal + 4 枚举；迁移离线生成并经真库验证
+- CLI（cli/）：11 条命令；stdout 只放 JSON、日志走 stderr；tsx 运行时 + npm run agent
+- agent_router：createPrediction/endorse/settle/listProposals/decideProposal/listPendingDeliveries/reportDelivery
+- 校准排除：lib/web/calibration.ts 单一事实源，接入校准图与计分入口
+- 修订留痕：lib/web/revisions.ts 纯函数 + editQuestion 落库
+- Web：components/questions/AgentRecordPanel.tsx（记录状态/背书/提案/修订历史）
+- skill：.pi/skills/decision-capture/SKILL.md
+- 文档：README.md（CLI 用法 + 验证表）、AGENTS.md（验证规范）
+- 验证：tsc 干净、lint 无告警、9 套件 70 测试全绿、Next 生产构建通过、CLI 与修订/触达经真实 Postgres 全链路验证
+
+### Key Decisions
+
+- Decision: CLI 用 createCaller 复用 tRPC 校验，而非 Prisma 直连
+- Rationale: 避免第三条写路径；但前提是 procedure 层不依赖 Next 认证适配器（故有 createContext 解耦）
+- Decision: 校准排除只定义在 lib/web/calibration.ts
+- Rationale: 逐处加过滤必然漏，而漏掉不会有任何症状——校准曲线被静默污染
+- Decision: planRevisions 做成纯函数
+- Rationale: 「首次 Forecast 之前不算修订」是业务规则，应可单测，而非埋在 mutation 里
+- Decision: Prisma 日志改走 stderr
+- Rationale: CLI 的 stdout 是数据通道；Prisma 默认输出到 stdout 会直接崩掉下游 JSON.parse
+
+### Lessons Learned
+
+- tracer bullet 的价值兑现了：探 `createCaller` 才发现 authOptions 的硬依赖，否则会写完全部代码才撞墙
+- 「stdout 只放 JSON」这条自定契约，是在真库跑 CLI 时才暴露被 Prisma 破坏的——单测发现不了，因为单测不连库
+- 夹具漂移会被新规则抓住：加了 endorsed 过滤后，resolution.test.ts 的夹具因缺该字段集体失败，正是回归保护生效
+- 本仓存在 tsserver 对 @prisma/client 的陈旧缓存误报。权威判据是 tsc 独立进程；判别三步（文件在 program 内 + tsc 干净 + 字段在生成产物中）已写入 AGENTS.md
+- 改夹具而非放宽规则：夹具缺 endorsed 是夹具不真实，不是过滤太严
+
+### Next Steps
+
+- 待你本地执行：npx playwright install chromium && npm run test:e2e（本机网络无法下载浏览器二进制）
+- T 的插件清单与发送契约待你给出 pi-telegram / pi-wechat 确切包名后补记
+- README.zh-CN.md 已于本轮同步（CLI 章节 + 测试数量 + 质量门禁）
+- Deferred：app 内 LLM 入口（parseDecision）的长期去留（Phase 2+）
+
+## Session: 2026-09-12 代码审查修复（13 项 + 2 项验证中新发现）
+
+### Completed
+
+- 按用户拍板的 6 项设计决策实施：oracleKind 分层计分（写侧）、结算后背书重算（`rescoreResolvedQuestion`）、`Question.resolutionSource/resolutionRationale`、`listRevisions` 非本人返回 `[]`、冻结字段变更**强制理由**、`RecordProvenance.AGENT_INSTRUCTED`
+- P2/P3：`editQuestion` 快照+留痕+更新同事务；`--probability=` / `%` 拒绝；CI 补 typecheck 并改跑 `test:coverage`；三个索引；待触达队列语义入 ADR-0017
+- **验证中新发现并修复**：`lib/web/resolution.ts`、`lib/_utils_server.ts`、`lib/web/notifications.tsx` 的 `console.log` 写 stdout，使 `settle` / `endorse` 的 CLI 输出无法 `JSON.parse`。新建 `lib/_log.ts`（stderr），并在 CLI 边界加 `installStdoutGuard()`：非 `emitJson` 的 stdout 写入**当场抛错**
+- 顺手修 `emailNewlySharedWithUsers` 的 `array-callback-return`（pi-lens 命中，行为等价）
+- 迁移直接改在已有的 `20260912155347_agent_capture_semantics` 里（未提交、未上线），并用 shadow 库验证迁移集合与 schema 零漂移；本地库通过 delta + 更新 checksum 对齐
+- 文档：README.md / README.zh-CN.md / AGENTS.md / `.pi` skill / ADR-0002·0004·0008·0012·0017 / roadmap / CONTEXT.md
+
+### Key Decisions
+
+- Decision: 相对分资格的判定也放进 `lib/web/calibration.ts`（与校准排除同一处，AGENTS.md 已写明）
+- Rationale: 读侧（SQL `AVG` 忽略 null、聚合处 `!== null`）本来就把 null 当"不参与"，因此**写侧写 null 即完成读侧口径**，不需要改任何聚合——也避免了"新聚合忘过滤"的复发
+- Decision: 历史行**不回填**：`oracleKind` 是本次新增且默认 `PUBLIC_FACT`，即所有既有 QuestionScore 都属公共事实类，没有需要清理的行
+- Decision: stdout 守卫放在 CLI 边界而非各模块
+- Rationale: 让"谁写了 stdout"在发生的当下暴露，而不是变成下游 `JSON.parse` 的神秘失败；npm 横幅与 `console.log` 已经各漏过一次
+
+### Lessons Learned
+
+- **真库验证才抓得到 stdout 污染**：单测里 `console.log` 无害，`list-due`（只读）也看不到问题——只有跑 `settle` / `endorse` 这类会进计分路径的写命令才暴露。作者的"真库验证 stdout 为纯 JSON"当初只覆盖了只读命令
+- `npm run` 会把脚本横幅写进 stdout（实测 3 行）；`npm run --silent` 或 `npx tsx` 才是纯的
+- `notifications.tsx` 里有一个**名为 `log` 的布尔参数**，因此把 `console.log` 改道时要用别名导入（`log as logToStderr`）
+- pi-lens 的 TS server 对 `@prisma/client` 的陈旧快照在此环境里非常顽固：`prisma generate`、`touch` 生成产物、删 `tsconfig.tsbuildinfo` 均无效（它只重读 project 文件）。判据仍是 AGENTS.md 那三条，**重启语言服务器**才能清
+- 校验迁移集合与 schema 是否一致，shadow 库比本地库更硬：`prisma migrate diff --from-migrations --to-schema-datamodel --shadow-database-url` 输出空迁移才算过
+
+### Next Steps
+
+- 你本地执行 `npx playwright install chromium && npm run test:e2e`（本轮未跑 e2e）
+- 真要清 pi-lens 的误报：重启语言服务器 / pi 会话
+- 本轮在本地 dev 库留下的验证数据（前缀 `review-verify`）可按需清理：`DELETE FROM "Question" WHERE title LIKE 'review-verify%';`

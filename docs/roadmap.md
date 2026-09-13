@@ -1,0 +1,148 @@
+# Roadmap
+
+> 面向实现的阶段计划。领域术语见 [`CONTEXT.md`](../CONTEXT.md)。
+> 本文件包含**待确认的决策点**（见文末 Open Decisions），这些点在与作者确认前不视为已定。
+
+## 目标
+
+一句话：**在对话中捕获决策 → 把隐含信念显性化为概率 → 持久化记录 → 校准评估 → 用决策卫生工具矫正过程。**
+
+**人类在 Web/TUI 上的直接操作是最可信的兜底输入源**；Agent 是并行的捕获入口（对话中识别 / 拆解 / 追问 / 写入）。详见 [ADR-0007](./adr/0007-human-operated-ui-and-record-provenance.md)。
+
+## 设计原则（贯穿所有阶段）
+
+1. **区分决策质量与结果质量** —— 记录"当时为什么这么判断"，与结果分开评分。
+2. **一切决策都是押注** —— 每个决策都被显性表述为资源投入 + 不确定性。
+3. **概率思维与信念标定** —— 强迫从"我觉得"变成"X% + 期限"。
+4. **放弃同样是美德** —— 用 Kill Criteria 让"退出"成为预设而非情绪决定。
+5. **保护"未来的自己"** —— 用 Ulysses Contract 约束热状态下的冲动。
+
+## 架构分层
+
+```text
+L0  记录 Agent        与用户对话：识别 / 拆解 / 追问 / 写入
+L1  决策捕获层        识别决策 → 拆解可预估部分 → 追问置信度
+L2  领域模型层        Decision / Prediction / Forecast / Resolution Oracle
+L3  记录层            固化 Decision + Prediction（判据、标准、锚点、期限）
+L4  跟踪 Agent        一次普通 pi 调用（独立上下文）：监测 → 结算
+L5  评估层            个人纵向校准 + 相对分（仅公共事实类）+ 决策质量评分
+L6  决策卫生工具层    事前剖析 / 杀死标准 / 尤利西斯合同 / 名义群体 / 寻真小组
+```
+
+## 阶段计划
+
+### Phase 1 — Agent 捕获闭环（MVP）
+
+**目标**：让 Agent 在对话中把决策变成带概率与期限的可验证预测，并落库。
+
+- pi skill：决策捕获（触发、拆解、追问、写入）。
+- 对话中识别决策，拆出其中**可预估**的部分。
+- grilling 追问，采集隐含置信度的具体数值与结算期限。
+- 写入现有 `Question` + `Forecast`（结算与校准自动复用）。
+- 结算（YES/NO/AMBIGUOUS）与 Brier 校准（已有能力）。
+
+**验收**：用户在对话中说"我在纠结要不要接这个 offer"，skill 能识别为决策、拆出 ≥1 个可预估命题、追问出明确的概率与期限并写入系统；到期后能结算并在校准视图看到。
+
+### Phase 2 — 决策质量与结果质量分离
+
+**目标**：让决策本身（理由、当时可得信息、预期后果）可回看、可评分，且不被结果污染。
+
+- `Decision` 实体：决策陈述、理由、预期后果、当时已知/未知信息。
+- `Decision Rubric`（决策量表）：把主观判断拆成维度 + 可对照的分值标准。
+- 复盘视图：决策时记录 vs 最终结果并排呈现。
+- 决策质量评分（独立于 Brier 结果分）。
+
+**验收**：任一决策可回看"当时的理由"，并能给出与结果脱钩的决策质量评估。
+
+### Phase 3 — 决策卫生工具集
+
+**目标**：把 Tetlock 式工具做成 Agent 引导的流程。
+
+- **Pre-mortem（事前剖析）**：决策前假设失败，倒推原因并记录。
+- **Kill Criteria（杀死标准）**：预承诺"状态 + 日期"，到期检测并提醒执行。
+- **Ulysses Contract（尤利西斯合同）**：冷静时设置的机制性限制（如限额、冷却期）。
+- **隐性直觉显性化**：`Decision Rubric` + 概率/期限记录的完整流程。
+
+**验收**：Agent 在决策启动前引导完成事前剖析并设定杀死标准；触发日/状态满足时系统发出提醒。
+
+### Phase 4 — 多人决策
+
+**目标**：让一个决策容纳多人的独立判断，并只暴露分歧。
+
+- **Nominal Group Technique（名义群体法）**：成员独立异步提交预测与理由，集中讨论分歧。
+- **Truth-Seeking Group（寻真小组）**：三人组、CUDOS 规范、`Blind Consultation`（盲测咨询）。
+- **DRI**：最终由单一决策人拍板。
+
+**验收**：一个决策可邀请多人独立提交（互不可见），系统对比并高亮分歧最大的认知盲区。
+
+### Phase 5 — 主动矫正
+
+**目标**：从"被动看图表"升级为"Agent 主动发现偏差"。
+
+- Agent 基于历史校准数据识别系统性偏差（过度自信 / 区间过窄等）。
+- 定期复盘提醒与偏差诊断。
+- 针对偏差给出可执行的调整建议。
+
+## 功能 Backlog（对照需求清单）
+
+| 功能                                 | 来源     | 阶段 | 现状                                            |
+| ------------------------------------ | -------- | ---- | ----------------------------------------------- |
+| 对话中识别决策                       | Agent 化 | 1    | 未开始                                          |
+| 拆解出"可预估"部分                   | Agent 化 | 1    | 未开始                                          |
+| 追问隐含置信度数值                   | Agent 化 | 1    | 未开始                                          |
+| pi skill（Agent 接入）               | Agent 化 | 1    | 未开始                                          |
+| 预测记录 + 时间序列                  | 已有     | —    | ✅ 已实现                                       |
+| 结算 + Brier / 相对 Brier / 百分位   | 已有     | —    | ✅ 已实现                                       |
+| 校准图                               | 已有     | —    | ✅ 已实现                                       |
+| `parseDecision`（自然语言 → 结构化） | 已有     | —    | ⏸️ 不接线（`E` = ② 后由 pi 承担；接线须补认证） |
+| 区分决策质量 / 结果质量              | 原则 1   | 2    | 未开始                                          |
+| 决策量表（Decision Rubric）          | 行动 2   | 2    | 未开始                                          |
+| 概率 + 时限预测记录                  | 行动 2   | 1    | ✅ 概率已有；期限即 `resolveBy`，缺"显性追问"   |
+| 事前剖析（Pre-mortem）               | 行动 3   | 3    | 未开始                                          |
+| 杀死标准（States and Dates）         | 行动 3   | 3    | 未开始                                          |
+| 尤利西斯合同                         | 行动 5   | 3    | 未开始                                          |
+| 名义群体法（异步独立收集）           | 行动 1   | 4    | 未开始                                          |
+| 只讨论分歧 + DRI                     | 行动 1   | 4    | 未开始                                          |
+| 寻真小组（3 人 + CUDOS）             | 行动 4   | 4    | 未开始                                          |
+| 盲测咨询                             | 行动 4   | 4    | 未开始                                          |
+| 主动偏差诊断                         | 原则 3   | 5    | 未开始                                          |
+
+## Open Decisions（待确认）
+
+> 以下每一项都会显著影响实现，**确认后**再落 ADR 与代码。
+
+**（当前无）** —— 全部决策点已确认，落入下列 ADR。
+
+### Deferred（已识别，暂不决策）
+
+- **App 内 LLM 入口的长期去留**：`parseDecision`（`lib/web/llm_parse.ts`，Kimi）是**未接线**能力。`E` = ② 之后自然语言解析由 pi 侧承担，故 MVP 不接线；但"Web 端能否不依赖 pi 直接录入"留待 Phase 2+。
+- **外部触达插件的具体清单与契约**：待当事人给出 pi-telegram / pi-wechat 的确切包名后补记（接口形态见 [ADR-0017](./adr/0017-pull-based-delivery-interface.md)）。
+
+## Decided
+
+- **B — Decision 是一等实体**（[ADR-0001](./adr/0001-decision-as-first-class-entity.md)）：`Decision` 承载推理过程，并包含 0..n 个 `Prediction`；`Prediction` 复用 `Question`/`Forecast`。
+- **B′ — Prediction 按结算判据分类、计分分层**（[ADR-0002](./adr/0002-prediction-oracle-and-layered-scoring.md)）：判据类型（公共事实 / Agent 可观测 / 自我报告）决定计分口径；自评类须在决策时冻结评分锚点。相对分/排行榜只收公共事实类，其余写 `relativeScore = null`。
+- **记录与跟踪分离**（[ADR-0003](./adr/0003-separate-recording-from-tracking.md)）：记录由对话 Agent 在决策时完成；跟踪委托给**独立上下文**的 Agent，不依赖记录时上下文。
+- **L — 跟踪 Agent 结算权限分层**（[ADR-0004](./adr/0004-layered-settlement-authority.md)）：公共事实类可自行结算（**须附来源，无来源即降级为提案**）；Agent 可观测类提案 + 确认；自我报告类必须由本人报告。
+- **M — 跟踪通过普通 pi 调用实现**（[ADR-0005](./adr/0005-tracking-as-plain-pi-invocation.md)）：跟踪不是服务，而是一次 pi agent 调用（独立上下文由 harness 提供）。
+- **N — 触发时机**（[ADR-0006](./adr/0006-tracking-triggers.md)）：到期触发 + 定期巡检必选；事件驱动可选，且**只传证据、不传推理**。
+- **A — 保留人类操作的写入口**（[ADR-0007](./adr/0007-human-operated-ui-and-record-provenance.md)）：人类在 Web/TUI 的直接操作是最可信的兜底输入源，写能力保留；Agent 创建的记录须标注**录入来源**。
+- **O — 未背书记录不进校准**（[ADR-0008](./adr/0008-endorsement-required-for-agent-collected.md)）：Agent 自主搜集的记录须经当事人**背书**才计入校准；未背书者可展示、可复盘，但不作校准样本。录入来源分 `HUMAN` / `AGENT_INSTRUCTED`（**数字由当事人给出**，天然已背书）/ `AGENT`（Agent 自己取得，须显式声明 `--agent-collected`）——判据是数字的来源，不是有无明确指令。
+- **I + P — 自动识别、察觉即追问**（[ADR-0009](./adr/0009-auto-capture-and-immediate-grilling.md)）：对话中自动识别决策（显式指令兜底），察觉即追问以保**信念新鲜度**；需配"稍后再说"退路。
+- **J — 追问到底**（[ADR-0010](./adr/0010-grill-until-answer.md)）：追问到拿到概率 / 期限 / 判据为止；代价是敷衍数字，缓解靠"我还没想清楚"的**显式出口**（见 `Q`）。
+- **Q — 未量化的预测**（[ADR-0011](./adr/0011-unquantified-predictions.md)）：追问的终点可以是"还没想清楚"——只存命题、无 Forecast；它是**合法状态**，且让"逃避量化"可见。
+- **R — 冻结后纠错**（[ADR-0012](./adr/0012-revisions-must-leave-a-trace.md)）：判据 / 期限 / 锚点可改但**必留痕**（旧值 / 新值 / 时间 / 理由）；首次 Forecast 之前不算修订。
+- **S — 仅站内内置触达**（[ADR-0013](./adr/0013-in-app-only-built-in-delivery.md)）：内置只做站内通知；外部触达经 **pi 消息插件**，本工程只预留接口；Postmark 通道不进 MVP。
+- **D — 扩展现有 Prisma schema**（[ADR-0014](./adr/0014-extend-existing-prisma-schema.md)）：新增 `Decision` / `Revision` 两表，`Prediction` **复用 `Question`**；数据留在 Postgres，不放文件。
+- **E — 本地 CLI 接入**（[ADR-0015](./adr/0015-local-cli-as-agent-interface.md)）：pi 侧调**本地 CLI**（内部走 tRPC `createCaller`）；一条命令 + 确定性 JSON；不依赖服务常驻。
+- **C — 决策质量 = 过程清单 + 叙事**（[ADR-0016](./adr/0016-decision-quality-as-checklist.md)）：用**可查证的过程清单**记录决策过程，不用自评量表；分值由清单完成度**推导**；该清单同时就是 `J` = ① 的追问脚本。
+- **F — skill 先放项目内**：`.pi/skills/` 起步（当前实现见 `.pi/skills/decision-capture/SKILL.md`），稳定后发布为 npm 包并落到 `.agent/skills/`。两个 skills 目录都在 `.gitignore` 里被放行，被忽略的只是 `.pi/`、`.agent/` 下的运行时（logs / extensions-data / todos）。
+- **G — MVP 不接线 app 内 LLM 入口**：`parseDecision` 保持未接线；若将来接线，必须补认证 + 限流（现状是**未认证** `publicProcedure`，任何人可消耗 Kimi 额度；同类问题另见同一路由里的 `sendEmail`）。
+- **H — MVP 仅个人**：不做分享 / 协作 UI；多人决策放 Phase 4。
+- **T — 触达接口用"拉取"**（[ADR-0017](./adr/0017-pull-based-delivery-interface.md)）：待触达项由 **pi 会话主动拉取**，本工程不做推送、不做轮询队列、不做事件总线。
+
+## Non-goals（当前明确不做）
+
+- 重做 Fatebook 已有的预测记录 / 结算 / 计分（复用即可）。
+- Slack / Discord / Chrome 扩展集成（已在 fork 时移除）。
+- 团队项目管理（里程碑、任务分配等）——「多人决策」指决策卫生，不是 PM。

@@ -1,179 +1,200 @@
-# [Fatebook](https://fatebook.io)
+# nano-fatebook-agent
 
 [English](./README.md) | [中文](./README.zh-CN.md)
 
-The fastest way to make and track predictions.
+An **agent-native decision-quality system**. It captures decisions from everyday
+conversation, makes implicit beliefs explicit as settleable probabilistic
+predictions, and tracks them over time so that **decision quality** can be told
+apart from **outcome quality**.
 
-This repo includes [fatebook.io](https://fatebook.io), [Fatebook for Slack](fatebook.io/for-slack) and [Fatebook for Chrome](https://fatebook.io/extension).
+> Forked from [Fatebook](https://fatebook.io) (prediction tracking +
+> calibration). The upstream Slack / Discord / Chrome-extension / tournament /
+> team integrations have been removed.
 
-You can report bugs in the [Issues](https://github.com/Sage-Future/fatebook/issues) tab. You can make feature requests there or in our [Discord](https://discord.gg/mt9YVB8VDE).
+## What it is — and what it is not
 
-## Tech stack
+- **Is**: a personal decision log with a calibration engine, driven primarily by
+  an AI agent during normal conversation.
+- **Is not**: a todo app, a note-taking app, or a team project-management tool
+  (team decision hygiene features are on the roadmap, not in the current build).
 
-- Prisma
-- Next.js
-- Vercel
-- Slack API
-- TRPC
-- Tailwind
+## Current capabilities
 
-## User-made integrations
+### Prediction tracking
 
-Using the [Fatebook API](https://fatebook.io/api-setup), Fatebook users have created:
+- `Question` (a verifiable proposition: title, type, `resolveBy`) and
+  `Forecast` (a probability, with timestamp and optional comment).
+- A question keeps the **full forecast time series** — you can revise a
+  prediction and the history is preserved.
+- Comments, tags, and per-question notes.
+- Resolution to `YES` / `NO` / `AMBIGUOUS`, with undo.
 
-- [An Obsidian plugin to create and preview Fatebook questions right inside your editor](https://github.com/GarretteBaker/obsidian-fatebook)
-- [An iOS shortcut to create a Fatebook question](https://www.icloud.com/shortcuts/25903acfcd3d4fd5bed31c2f50322928)
-- [An Alfred workflow to create Fatebook questions](https://github.com/Calebp98/alfred-fatebook-workflow)
-- [An Emacs plugin to create Fatebook questions](https://github.com/sonofhypnos/fatebook.el)
+### Calibration & scoring
 
-Share your own API creations in [Discord](https://discord.gg/mt9YVB8VDE)!
+- **Brier score** and **relative Brier score** (relative to the median of other
+  forecasters on each question), plus rank.
+- **Percentile** against other forecasters.
+- **Calibration chart**: buckets your stated probabilities and compares them
+  with the observed outcome frequency.
+- Surfaced by the `TrackRecord` component on `/`, `/stats`, and `/user/[id]`.
 
-## Contributing
+### Access & local development
 
-If you're interested in contributing, [let us know](https://github.com/Sage-Future/fatebook/issues), and we can help you get up and running - thank you!
+- Email magic-link sign-in (NextAuth), plus a per-user API key for programmatic
+  access.
+- One-command local stack via Docker Compose (PostgreSQL + Mailpit mail catcher).
 
-### Using Docker
+### Agent integration — the CLI is the agent's interface
 
-The easiest way to get a local dev environment running:
+The agent talks to the app through a local CLI, which calls the same tRPC
+procedures as the web UI via `createCaller` (ADR-0015). No Next.js server is
+required — only PostgreSQL.
+
+```bash
+# owner identity comes from the environment
+export FATEBOOK_AGENT_USER_EMAIL=you@example.com
+
+npm run --silent agent -- list-due                       # due & unsettled
+npm run --silent agent -- create-prediction \
+  --title "offer arrives before June" \
+  --resolve-by 2026-06-30 \
+  --criteria "the words 'formal offer' appear in an email" \
+  --probability 70%                             # omit = unquantified (legal)
+npm run --silent agent -- list-unendorsed                # not yet counted toward calibration
+npm run --silent agent -- endorse --question-id <id>
+npm run --silent agent -- settle --question-id <id> --resolution YES --source <url>
+npm run --silent agent -- list-proposals                 # settlement proposals
+npm run --silent agent -- list-deliveries                # pull-based delivery queue
+npm run --silent agent -- report-delivery --notification-id <id> --outcome DELIVERED --channel telegram
+```
+
+**Contract:** stdout carries JSON only; every diagnostic goes to stderr.
+`npm run --silent agent -- --help` lists all commands. `--silent` is not
+optional: without it npm prefixes stdout with its own banner, which breaks the
+"stdout is JSON" contract (ADR-0015). `--help` writes to stderr for the same
+reason.
+
+Agent-written records are tagged as such and start **unendorsed** — they are
+visible and reviewable, but excluded from calibration until you endorse them on
+the question page (ADR-0008). `parseDecision` (`lib/web/llm_parse.ts`) is
+deliberately left unwired: with the CLI as the agent's interface, natural
+language parsing happens on the pi side.
+
+### How to verify
+
+| Layer                    | Command             | Requires                                                               |
+| ------------------------ | ------------------- | ---------------------------------------------------------------------- |
+| Types                    | `npm run typecheck` | —                                                                      |
+| Lint                     | `npm run lint`      | —                                                                      |
+| Unit / component         | `npm test`          | —                                                                      |
+| End-to-end (agent → web) | `npm run test:e2e`  | `docker compose up -d db mail`, then `npx playwright install chromium` |
+
+Where to look when something looks wrong:
+
+- **CLI** — stdout is machine-readable JSON; every log line (including Prisma
+  query logs, prefixed `prisma:`) goes to stderr.
+- **Web** — a question page renders 记录状态 (provenance, oracle kind, criteria),
+  an amber 尚未背书 block with an endorse button, pending settlement proposals
+  with accept/reject, and the revision history.
+- **Database** — inspect `Forecast.endorsed`, `Question.oracleKind`,
+  `Revision`, `ResolutionProposal`, `Notification.deliveryState`.
+
+> Heads-up: `tsc --noEmit` is the authoritative type check. The language server
+> can hold a stale cache of `@prisma/client` after `prisma generate`; when the
+> two disagree, trust `tsc`.
+
+### Quality gates
+
+- Jest unit tests covering scoring, calibration-sample filtering, resolution,
+  revision planning, LLM parsing, CLI argument parsing, and form behavior.
+- Playwright end-to-end tests: the human sign-in → create → resolve journey, and
+  the agent CLI → web endorse / proposal-confirm journey.
+- CI runs lint + typecheck + unit tests + e2e on every pull request.
+
+## Vision: agent-native decision hygiene
+
+The goal is to make the agent the primary _capture_ surface:
+
+1. **Capture** — the agent notices, mid-conversation, that the user is facing a
+   decision.
+2. **Decompose** — it separates the decision into the parts that are actually
+   _estimable_ (settleable predictions).
+3. **Grill** — it asks the user for the concrete confidence numbers behind vague
+   language ("I think it'll work" → "60%? 80%? by when?").
+4. **Record** — predictions are persisted with explicit resolution criteria.
+5. **Calibrate** — once resolved, results feed calibration and scoring.
+6. **Correct** — using decision-hygiene tools (pre-mortem, kill criteria,
+   Ulysses contracts, nominal groups, truth-seeking groups) to improve the
+   _process_, not just the score.
+
+**Recording and tracking are separate.** The recording agent runs inside your
+conversation and only writes decisions and predictions down — with resolution
+criteria, oracle type, and anchors frozen at decision time. Tracking is
+delegated to a **separate agent in an independent context**, so post-hoc
+reinterpretation of what you "meant" cannot leak into settlement.
+
+### Principles
+
+1. **Separate decision quality from outcome quality.** Good processes yield bad
+   outcomes under luck; resist `Resulting`.
+2. **All decisions are wagers.** Every choice commits scarce resources under
+   incomplete information.
+3. **Probabilistic thinking & belief calibration.** Replace certainty with a
+   probability distribution, and keep it open to new evidence.
+4. **Quitting is a virtue.** Persisting and quitting are two sides of one
+   decision; new adverse signals make quitting an obligation.
+5. **Protect your future self.** Counter present bias by letting your future
+   self constrain today's choices.
+
+See [`docs/roadmap.md`](./docs/roadmap.md) for the phased plan and the open
+design decisions.
+
+## Quick start (Docker)
 
 ```shell
-git clone https://github.com/Sage-Future/fatebook.git
-cd fatebook
 cp .env.example .env
 docker compose up
 ```
 
-The app will be available at <http://localhost:3000>. The database is created automatically and migrations run on startup.
+The app is available at <http://localhost:3000>. The database is created and
+migrations run automatically on startup.
 
-**Signing in:** Use the email magic link option. Docker Compose includes [Mailpit](https://mailpit.axllent.org/) as a local mail catcher — check <http://localhost:8025> to see the sign-in email after requesting one. No SMTP account needed.
+**Signing in:** use the email magic-link option. Docker Compose includes
+[Mailpit](https://mailpit.axllent.org/) as a local mail catcher — open
+<http://localhost:8025> to read the sign-in email. No SMTP account needed.
 
-**Note:** The local dev SSL proxy is skipped in Docker, so the app runs on plain HTTP. The `.env.example` shared Google OAuth credentials require HTTPS and won't work; either set up your own OAuth credentials with `http://localhost:3000` redirect URIs, or use the email provider instead.
-
----
-
-The following instructions assume you're using macOS and Homebrew.
-
-### Clone the repository
+## Development
 
 ```shell
-git clone https://github.com/Sage-Future/fatebook.git
-cd fatebook
+npm install
+npx prisma generate --no-hints
+npm run dev          # dev server (port 3005, SSL proxy → 3000)
+npm test             # Jest unit tests
+npm run test:coverage
+npm run lint         # ESLint
+npm run format       # Prettier
+npm run studio       # Prisma Studio
+```
+
+End-to-end tests (requires Docker for Postgres + Mailpit):
+
+```shell
+docker compose up -d db mail
 cp .env.example .env
+npx playwright install chromium
+npm run test:e2e
 ```
 
-### Create TLS certificate for localhost
+## Project documentation
 
-```shell
-brew install mkcert
-mkcert -install
-mkcert localhost
-```
+| Document                               | Contents                            |
+| -------------------------------------- | ----------------------------------- |
+| [`CONTEXT.md`](./CONTEXT.md)           | Ubiquitous language / glossary      |
+| [`docs/roadmap.md`](./docs/roadmap.md) | Phased plan + open decisions        |
+| [`docs/adr/`](./docs/adr/)             | Architecture decision records       |
+| [`knowledge/`](./knowledge/)           | Engineering notes (partly pre-fork) |
+| [`AGENTS.md`](./AGENTS.md)             | Working conventions for AI agents   |
 
-### Set up the database
+## License
 
-```shell
-brew install postgresql@15
-# Or download and install from https://www.postgresql.org/download
-# If you do this, follow the instructions there for starting the database.
-
-# Follow the instructions that the installer provides on how to add postgresql@15 to your PATH.
-# For example, on some systems it will tell you to do this:
-echo 'export PATH="/opt/homebrew/opt/postgresql@15/bin:$PATH"' >> ~/.zshrc
-. ~/.zshrc
-
-# If you're using Bash rather than Z shell, substitute `~/.bash_profile` for
-# `~/.zshrc` in the previous commands.
-
-# Start postgres
-LC_ALL="C" /opt/homebrew/opt/postgresql@15/bin/postgres -D /opt/homebrew/var/postgresql@15
-```
-
-Open a new terminal window and run the following commands:
-
-```shell
-# create `fatebook` role
-createuser fatebook
-
-# create `fatebook_development` database, owned by the `fatebook` user
-createdb fatebook_development --owner fatebook
-```
-
-1. Run `npm install` to install dependencies.
-2. Run `npm run vercel-build` to set up the Fatebook schema.
-
-### Start the server
-
-1. Run `npm run dev`.
-2. Go to <https://localhost:3000>. You should be able to sign in and create predictions.
-
-### Running tests
-
-Run jest tests with `npm run test`.
-
-You can also generate a coverage report by running `npm run test -- --coverage`, the report will be printed to the console and also saved in the `coverage/` directory. The best way to view it is in the html format under `coverage/lcov-report/index.html` (run `open coverage/lcov-report/index.html`).
-
-### Running in the vscode debugger
-
-There is a launch config for vscode/Cursor called "Next.js: debug fatebook full stack" that will run the web app in the debugger (frontend and backend, breakpoints will work on the client or during SSR).
-
-### Developing the Fatebook browser extension
-
-Fatebook has a Chrome and Firefox [extension](https://fatebook.io/extension). The source is in [/chrome-extension](https://github.com/Sage-Future/fatebook/tree/main/chrome-extension)
-
-To test changes to the Chrome extension:
-
-1. Follow the general Fatebook dev setup steps above
-2. In `after.js`, make sure `extensionInfo.isDev = true`
-3. `npm run dev`, and check that your dev server is running at <https://localhost:3000>
-4. Go to `chrome://extensions`
-5. Disable the prod Fatebook extension, if you have it installed
-6. "Load unpacked", and select the chrome-extension directory
-7. In `chrome://extensions/shortcuts`, set the shortcut for "Make a new prediction" to Cmd-Shift-F, if it's not already set
-8. Before committing, make sure `extensionInfo.isDev = false` in `after.js`
-
-If you make a change to the contents of a file in `chrome-extension`, to see the changes in your browser you'll need to reload the extension:
-
-1. Go to `chrome://extensions`
-2. Click the refresh button next to the unpacked version of Fatebook for Chrome
-3. Refresh any tabs where you want to test the extension
-
-Changes to Fatebook itself (e.g. changes to `/pages/embed/q/[id].tsx`) will be reflected without needing to reload the extension.
-
-<details>
-  <summary>Deploying updates to the Chrome extension</summary>
-
-Contributors - a maintainer will test and deploy your changes.
-
-Instructions for maintainers:
-
-1. Test changes locally in Chrome and Firefox
-2. Set `extensionInfo.isDev = false` in `after.js`
-3. Deploy any changes to fatebook.io, and test your local unpacked extension with the prod environment
-4. Increment the `version` field in `manifest.json`
-5. Run `npm run zip`
-6. Upload the Chrome extension to the webstore and the Firefox version to Mozilla addons. Approval normally takes <24 hours
-
-</details>
-
-### Addendum
-
-If you want to make or test changes to the Slack integration, you'll need to set up a Slack app. This is more involved - [get in touch](https://github.com/Sage-Future/fatebook/issues) and we'll help you get up and running.
-
-<details>
-  <summary>Optional extra step: Or set up your own Google OAuth credentials</summary>
-
-Your `.env.example` is prefilled with the shared Fatebook developer Google OAuth credentials. If you'd like to create your own (e.g., to change the configuration), follow these steps:
-
-1. Go to <https://console.cloud.google.com/apis/credentials>.
-2. Click <kbd>Configure a project</kbd>. (Or, if you've previously made a project, click <kbd>Your project</kbd> -> <kbd>New project</kbd> -> Select your new project)
-3. Click <kbd>CREATE CREDENTIALS</kbd>.
-4. Select `OAuth client ID`.
-5. You may need to follow the instructions in "Create consent screen" - select all non-sensitive scopes. Then try 3-4 again.
-6. For `Application type` select `Web application`.
-7. Under `Name` type something like `Fatebook development`.
-8. Under `Authorized redirect URIs`, click <kbd>ADD URI</kbd> and under `URIs 1` type `https://localhost:3000/api/auth/callback/google`.
-9. Open the `.env` file in the root of the `fatebook` repository. Copy and paste the `Client ID` value after `GOOGLE_CLIENT_ID=` in `fatebook/.env`, and do the same for `Client secret` and `GOOGLE_CLIENT_SECRET=`.
-
-</details>
-
-If you have any problems, [let us know](https://github.com/Sage-Future/fatebook/issues)!
+MIT
