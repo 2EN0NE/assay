@@ -4,6 +4,7 @@ import Link from "next/link"
 import { GetStaticProps } from "next"
 import fs from "fs"
 import path from "path"
+import { log } from "../../lib/_log"
 
 interface BlogPost {
   slug: string
@@ -38,6 +39,7 @@ export const getStaticProps: GetStaticProps<BlogPageProps> = async () => {
 
           if (metadataMatch) {
             // Use eval to parse the metadata object (be cautious with this approach in production)
+            // pi-lens-ignore: no-eval
             metadata = eval(`(${metadataMatch[1]})`)
           }
 
@@ -64,7 +66,7 @@ export const getStaticProps: GetStaticProps<BlogPageProps> = async () => {
       },
     }
   } catch (error) {
-    console.error("Error reading blog posts:", error)
+    log("Error reading blog posts:", error)
     return {
       props: {
         posts: [],

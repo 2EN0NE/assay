@@ -21,7 +21,7 @@
       },
       {
         "selector": "function",
-        "format": ["camelCase", "PascalCase"] // PascalCase for React components
+        "format": ["camelCase", "PascalCase"]
       },
       {
         "selector": "property",
@@ -54,7 +54,8 @@
     ],
     "require-await": "error",
     "@typescript-eslint/no-misused-promises": "error",
-    "@typescript-eslint/no-floating-promises": "error"
+    "@typescript-eslint/no-floating-promises": "error",
+    "no-console": "error"
   },
   "overrides": [
     {
@@ -63,7 +64,6 @@
         "project": null,
         "program": null
       },
-      // from https://github.com/typescript-eslint/typescript-eslint/blob/v6/packages/eslint-plugin/src/configs/disable-type-checked.ts
       "rules": {
         "no-undef": "off",
         "@typescript-eslint/await-thenable": "off",
@@ -116,7 +116,14 @@
     {
       "files": ["./**/*.test.*"],
       "rules": {
-        "no-undef": "off"
+        "no-undef": "off",
+        "no-console": "off"
+      }
+    },
+    {
+      "files": ["./lib/_log.ts"],
+      "rules": {
+        "no-console": "off"
       }
     }
   ]

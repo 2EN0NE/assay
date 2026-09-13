@@ -381,21 +381,6 @@ export function mean(arr: number[]) {
   return sum(arr) / arr.length
 }
 
-// for convenient debugging
-export function truthyLog(message: any) {
-  if (process.env.NODE_ENV === "development") {
-    console.log(message)
-  }
-  return true as true
-}
-
-export function logAndReturn<T>(message: T) {
-  if (process.env.NODE_ENV === "development") {
-    console.log(message)
-  }
-  return message
-}
-
 export function capitalizeFirstLetter(str: string) {
   if (str.length === 0) {
     return ""

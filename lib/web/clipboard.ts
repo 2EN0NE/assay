@@ -1,3 +1,4 @@
+import { warn } from "../_log"
 export async function copyToClipboard(items: { [mimeType: string]: string }) {
   // Try modern API first, but only with supported MIME types
   if (navigator.clipboard && navigator.clipboard.write) {
@@ -26,17 +27,12 @@ export async function copyToClipboard(items: { [mimeType: string]: string }) {
             !["text/plain", "text/html", "image/png"].includes(mimeType),
         )
         if (unsupportedTypes.length > 0) {
-          console.warn(
-            `Skipped unsupported MIME types: ${unsupportedTypes.join(", ")}`,
-          )
+          warn(`Skipped unsupported MIME types: ${unsupportedTypes.join(", ")}`)
         }
         return
       }
     } catch (error) {
-      console.warn(
-        "Modern clipboard API failed, falling back to legacy method",
-        error,
-      )
+      warn("Modern clipboard API failed, falling back to legacy method", error)
     }
   }
 
@@ -46,7 +42,7 @@ export async function copyToClipboard(items: { [mimeType: string]: string }) {
   el.addEventListener("copy", (e: ClipboardEvent) => {
     e.preventDefault()
     if (e.clipboardData) {
-      Object.entries(items).map(([mimeType, data]) => {
+      Object.entries(items).forEach(([mimeType, data]) => {
         e.clipboardData!.setData(mimeType, data)
       })
     }
