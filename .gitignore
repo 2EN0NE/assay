@@ -28,8 +28,14 @@ localhost.pem
 # Don't commit scripts in root dir
 *.py
 
-# pi runtime
-.pi/
+# pi / agent 运行时（只放行 skills——它们是项目交付物）
+.pi/*
+!.pi/skills/
+.agent/*
+!.agent/skills/
+
+# 临时工作台（spec 已归档到 docs/issues/）
+.scratch/
 
 # Playwright
 playwright-report/
