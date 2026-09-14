@@ -2,8 +2,9 @@ import { Forecast, Question } from "@prisma/client"
 import { TRPCError } from "@trpc/server"
 import { z } from "zod"
 import prisma from "../prisma"
+import { assertOwnedDecision } from "./decision_router"
 import { handleQuestionResolution, rescoreResolvedQuestion } from "./resolution"
-import { publicProcedure, router } from "./trpc_base"
+import { ownedProcedure, router } from "./trpc_base"
 
 /**
  * Agent 面向的过程（见 ADR-0015）。
@@ -23,18 +24,6 @@ const oracleKindSchema = z.enum([
   "SELF_REPORT",
 ])
 const resolutionSchema = z.enum(["YES", "NO", "AMBIGUOUS"])
-
-/** 所有过程都要求已解析出 owner，且只能碰自己的数据。 */
-const ownedProcedure = publicProcedure.use(({ ctx, next }) => {
-  if (!ctx.userId) {
-    throw new TRPCError({
-      code: "UNAUTHORIZED",
-      message:
-        "未解析到 owner 用户。请设置 FATEBOOK_AGENT_USER_EMAIL 指向已存在的账号。",
-    })
-  }
-  return next({ ctx: { ...ctx, userId: ctx.userId } })
-})
 
 export type PredictionView = {
   id: string
@@ -192,6 +181,11 @@ export const agentRouter = router({
          * 此时记录进未背书队列，由当事人在 Web 上背书后才计入校准。
          */
         agentCollected: z.boolean().default(false),
+        /**
+         * ADR-0019：这条 Prediction 属于哪个 Decision。
+         * 必须是自己的决策——挂到别人的决策上等于越权写。
+         */
+        decisionId: z.string().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -205,6 +199,14 @@ export const agentRouter = router({
 
       const provenance = input.agentCollected ? "AGENT" : "AGENT_INSTRUCTED"
 
+      let decisionId: string | null = null
+      if (input.decisionId !== undefined) {
+        // 属主边界只有一份实现（`decision_router`）：挂到别人的决策上等于越权写，
+        // 而这里与 `attachPrediction` 问的是同一个问题。
+        const decision = await assertOwnedDecision(input.decisionId, ctx.userId)
+        decisionId = decision.id
+      }
+
       const question = await prisma.question.create({
         data: {
           userId: ctx.userId,
@@ -216,6 +218,7 @@ export const agentRouter = router({
           scoringAnchor: input.scoringAnchor,
           notes: input.note,
           provenance,
+          decisionId,
         },
       })
 

@@ -147,3 +147,80 @@
 - 你本地执行 `npx playwright install chromium && npm run test:e2e`（本轮未跑 e2e）
 - 真要清 pi-lens 的误报：重启语言服务器 / pi 会话
 - 本轮在本地 dev 库留下的验证数据（前缀 `review-verify`）可按需清理：`DELETE FROM "Question" WHERE title LIKE 'review-verify%';`
+
+## Session: 2026-09-13（测试保障审查后的修复）
+
+### Completed
+
+- P1 锁定绕过：`detachPrediction` 拒绝解绑已结算预测；`attachPrediction` 挂上已结算预测时立即记录锁定时点（`lib/web/decision_router.ts`）
+- P1 未认证路径：补 `ownedProcedure` 的 UNAUTHORIZED 用例（`decision_router.test.ts`）——这条 guard 是唯一防线，因为 `where: { userId: undefined }` 在 Prisma 里等于"不过滤"
+- P1 **e2e 首次跑通**（8 passed）：修了 3 条真实问题（见下）+ 4 处陈旧/歧义定位子
+- P2 覆盖率收集范围排除 `.next/`、`coverage/`、`e2e/`；决策三模块加 80% 阈值；lint 范围加入 `cli/`、`e2e/`
+- P2 playwright `trace` 改 `retain-on-failure`（`on-first-retry` + `retries: 0` 永不录制）
+- P2 新增 `e2e/decision-container.spec.ts`（真库验 `SetNull`）、`lib/web/decision_decoupling.test.ts`（import-graph 守卫 ADR-0020 脱钩）、CLI 进程级契约用例
+- P2 pre-commit 加 typecheck、新增 pre-push 跑单测；CI 增加 main push 触发与 job 超时
+- P3 邮件订阅兜底抽成 `lib/web/mailing_list.ts` 并补用例（原先的 catch 分支零覆盖）
+- P3 mailpit 镜像钉 `v1.31.1`；`00-spec.md` 与实现不一致处（Web 写入入口）改为如实描述
+
+### Key Decisions
+
+- Decision: 已结算预测不允许解绑，而不是"解绑时保留锁定判据"
+- Rationale: 锁定的唯一判据是"该决策下是否有已结算预测"（事实驱动、不看 `rubricLockedAt`）。要在解绑后保住锁，就得引入第二个判据或让判据撒谎；少一条解绑路径比多一个可自证的锁便宜
+- Decision: `AgentRecordPanel` 外层套无样式 div，而不是把它改成 forwardRef
+- Rationale: 它没有 agent 痕迹时 `return null`，forwardRef 也拿不到 DOM 节点，v2 的 Transition 照样抛错
+- Decision: 时序绕过（事后建决策再补清单）**未加判据**，只补了"挂上已结算预测即记锁定时点"
+- Rationale: 决策当时没有已挂预测时，"这是不是事后补的"在数据上不可判定；硬加时点比较会误伤"把旧的已结算问题归到旧决策下"这类正当用法。要真正关闭需要产品决定，已写进代码注释与审查发现
+
+### Lessons Learned
+
+- **5 条 e2e 全红时，根因不是测试**：`Question.tsx` 的 `<Transition>` 被加了第二个子元素，HeadlessUI v2 因此抛错，`ErrorBoundary` 把每张卡片换成 "Something went wrong"。当时工作区里正在改断言（signIn exact、`getByText` exact），差点把应用崩溃当成测试问题收尾。教训与排查手法见 `knowledge/troubleshooting/headlessui-transition-v2-ref.md`
+- 页面被 ErrorBoundary 盖住时，`error-context.md` 快照只有一句 "Something went wrong"；**组件栈在 `trace.zip` 的 `*-trace.trace` 里**，grep `transition.js` 一类的框架路径就能定位
+- headlessui v2 的 `<Transition>` 两条硬约束：单子元素；子元素必须能把 ref 落到真实 DOM 节点（普通函数组件、`return null` 都不行）
+- `invalidateQuestion` 只失效 `question.*` 查询，但 `AgentRecordPanel` 读的是 `agent.*`——新增读取方时容易漏掉失效，表现是"服务端写了、界面要刷新才看见"
+- 本机 `npx playwright install chromium` 拉不到 CDN；用系统 Edge（`channel: "msedge"`）跑同一套用例是可行退路，已写进 README
+
+### Next Steps
+
+- 人工裁决：ADR-0020 的"决策当时填写"要不要加时点判据（`Decision.createdAt` vs `Question.resolvedAt`）
+- 人工裁决：`docs/issues/decision-quality/00-spec.md` 里 User Story 20（Web 上创建/编辑决策）——目前明确标为推迟
+- CI 侧：确认 main 分支保护与 required status check 是否已开（仓库里看不到）；`docs/issues/decision-quality/` 尚在 untracked，需随本次变更一并提交
+- pi-lens 对 `.github/workflows/test.yml` 的 14 条告警（SHA 钉版 / permissions）为既有问题，需联网核对上游后再处理
+
+## Session: 2026-09-13（评审后的第二轮：文档定稿 → 按票实现）
+
+### Completed
+
+- 先落文档（提交闸门）：ADR-0020 重写（决策版本 / 单调锁 / 时点标记）、ADR-0016 补条目↔证据映射、ADR-0012 扩到叙事改写、ADR-0001/0014/spec/roadmap/CONTEXT/README/AGENTS.md 逐处改如实；AGENTS.md 新增两条元规则——「文档声明必须可在仓库里被验证」与「ADR 只追加，但必须写明它改掉了哪一句」。
+- 对 `docs/adr/` 做了一轮逻辑矛盾审计（20 篇 / 433 行，按"同一件事被两篇以上规定过"两两对照），结论：M1–M4 四条真矛盾 + S1–S7 次级不一致 + 一条根因（ADR 只追加不回改 ⇒ 同一规则有多个"最新版本"）。
+- 按票实现 08–14（全部落在 `docs/issues/decision-quality/`）：
+  - 08 prefactor：`rubricLockOf`/`rubricStatusOf` 归位纯模块；`agent_router` 复用 `assertOwnedDecision`；自研的源码文本守卫换成 ESLint `no-restricted-imports`（并按 AC 做了一次性验证：临时加违规 import ⇒ lint 报错）。
+  - 09 决策版本：`RUBRIC_VERSIONS` 表 + `rubricVersion` + 按该版本计分/校验；删掉无人读写的 `DecisionRubricEntry.note`。
+  - 10 单调锁：判据 = 事实 ∨ 已记录的 `rubricLockedAt`；结算路径（`dbResolveQuestion`）写时点，撤销结算不清除。
+  - 11 披露标记：`rubricRecordedAfterOutcomeAt`，在"挂上一条已结算 Prediction"时按"清单记录时点 vs 揭晓时点"判定。
+  - 12 逐条分数：`byId` 取**本人**的 `QuestionScore`（`absolute` 恒有、`relative` 可为 null），不做决策级聚合。
+  - 13 叙事写入口：CLI `update-narrative`；补写自由、改写/清空必须带理由并落 `Revision`；`Revision` 主体改为 `questionId` / `decisionId` 恰有其一（迁移里有 CHECK）。
+  - 14 CLI `detach-prediction`（与 attach 对称；已结算仍拒绝）。
+- 验证：`npm run typecheck` / `npm run lint` / `npm test`（185 个用例）全绿；并用**真库 CLI 链**端到端验证了结算路径写锁、结算后拒绝写清单、补写自由/改写必须给理由/留痕在复盘读取里可见、已结算不可解绑、CHECK 约束（23514）。
+
+### Key Decisions
+
+- 决策版本的口径：按 `Decision.rubricVersion` 计分，条目增删只能新建版本（表只增不改，被测试整张钉住）。
+- 锁单向：判据取"事实 ∨ 已记录时点"，撤销结算不解锁；已结算的 Prediction 不许解绑。
+- 叙事改写走 ADR-0012 的同一机制（`Revision` + 强制理由），补写空白字段不算改写。
+- 逐条分数直接取已存值，**不做**决策级聚合分（那是一个新指标，归 ADR-0002 管辖）。
+
+### Lessons Learned
+
+- **`prisma migrate dev` 在非交互环境不可用**（它会要提示）；改用 `prisma migrate diff --from-schema-datasource ... --to-schema-datamodel ... --script` 生成 SQL + 手写迁移目录 + `prisma migrate deploy`。手写迁移还能加 Prisma schema 表达不了的 CHECK 约束。
+- **`undefined !== null` 是真陷阱**：mock/fixture 缺字段时 `rubricLockedAt` 会变成 `undefined`，把"从未锁过"读成"锁过"（测试里当场踩到）。入口处 `?? null` 归一是值得的。
+- **pi-lens 的 LSP 会缓存 `node_modules/.prisma/client`**：`prisma generate` 之后 LSP 仍按旧类型报错（连已删除的 `note` 列都还在），而 `tsc --noEmit --incremental false` 干净、磁盘上的客户端已是新类型。消除办法只有重启 LSP；本轮把 14 条按 false-positive 记下并留了证据。
+- **e2e 的登录依赖 `AUTH_EMAIL_SERVER`**，而它此前既不在 `.env.example` 也不在 `e2e/README.md` 里——照文档做必然六个用例全红。已补进两处。
+- **真正让那六个用例全红的是 `NEXTAUTH_URL` 的 scheme 与端口对不上**（已实测确认）：`.env` 里是 `https://localhost:3000/api/auth`，NextAuth 把它直接渲染进登录表单的 `action`，而 e2e 的 `webServer` 跑的是**明文 HTTP 的 3000** ⇒ 浏览器把 https 的 POST 打到只会 http 的端口 ⇒ `ERR_SSL_PROTOCOL_ERROR`，**请求根本没到服务器**（dev 日志里只有 `GET /api/auth/signin`，没有 POST）⇒ Mailpit 收不到信。修法：`dev:e2e` 把 `NEXTAUTH_URL`/`HOST_URL` 钉成 `http://localhost:3000`（`dotenv` 不覆盖已存在的环境变量，内联赋值有效）。
+  - 教训：**“配置改对了却仍不生效”时，要去看请求到底有没有发出**（服务端日志的缺失比错误信息更有信息量：只有 GET 没有 POST，说明问题在浏览器侧，不在服务端）。
+  - 我先前把它归因于“复用的 dev server 沿用了旧环境”，那是**错的**：与复用无关，是表单 action 指向了 https。已把 `e2e/README.md` 里的错误说明改成实测结论。
+
+### Next Steps
+
+- e2e 已能跑绿（**8 passed**）：端口 3000 上那个遗留的 `next dev`（PID 372/373）经作者授权停掉，`dev:e2e` 补上 http 的 `NEXTAUTH_URL`/`HOST_URL` 后全部通过。
+- **已知 flake（未修）**：整套跑时 `修订历史` 用例超时一次——上一步的 HeadlessUI portal 残留并拦截点击；单跑该用例通过。
+- 审计结论里属于"改文档"的那批（ADR-0002 排名口径、0012 例外永不关闭、0006 保证无承担者、0007 人在环写入口、0014 枚举、0017 队列含历史行…）还没落笔，等作者裁决口径后再改。

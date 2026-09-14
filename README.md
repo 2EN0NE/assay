@@ -66,6 +66,15 @@ npm run --silent agent -- settle --question-id <id> --resolution YES --source <u
 npm run --silent agent -- list-proposals                 # settlement proposals
 npm run --silent agent -- list-deliveries                # pull-based delivery queue
 npm run --silent agent -- report-delivery --notification-id <id> --outcome DELIVERED --channel telegram
+
+# decisions (ADR-0019 / ADR-0020): a Decision contains 0..n Predictions
+npm run --silent agent -- create-decision \
+  --statement "..." --reasoning "..."     # narrative fields are all optional
+npm run --silent agent -- attach-prediction --decision-id <id> --question-id <id>
+npm run --silent agent -- detach-prediction --question-id <id>   # refused once settled
+npm run --silent agent -- set-rubric --decision-id <id> --done alternatives,premortem --not-done baseRate
+npm run --silent agent -- update-narrative --decision-id <id> --reasoning "..." --reason "..."
+npm run --silent agent -- show-decision --decision-id <id>      # narrative + rubric + each Prediction's score
 ```
 
 **Contract:** stdout carries JSON only; every diagnostic goes to stderr.
@@ -82,12 +91,21 @@ language parsing happens on the pi side.
 
 ### How to verify
 
-| Layer                    | Command             | Requires                                                               |
-| ------------------------ | ------------------- | ---------------------------------------------------------------------- |
-| Types                    | `npm run typecheck` | —                                                                      |
-| Lint                     | `npm run lint`      | —                                                                      |
-| Unit / component         | `npm test`          | —                                                                      |
-| End-to-end (agent → web) | `npm run test:e2e`  | `docker compose up -d db mail`, then `npx playwright install chromium` |
+| Layer                    | Command                 | Requires                                                               |
+| ------------------------ | ----------------------- | ---------------------------------------------------------------------- |
+| Types                    | `npm run typecheck`     | —                                                                      |
+| Lint                     | `npm run lint`          | —                                                                      |
+| Unit / component         | `npm test`              | —                                                                      |
+| Unit + coverage gates    | `npm run test:coverage` | — (**this is the one CI runs**; `npm test` skips the thresholds)       |
+| End-to-end (agent → web) | `npm run test:e2e`      | `docker compose up -d db mail`, then `npx playwright install chromium` |
+| Production build         | `npx next build`        | a migrated database (`pages/global-stats.tsx` prerenders from it)      |
+
+> If `npx playwright install chromium` cannot reach `cdn.playwright.dev` (common on
+> corporate networks / behind a proxy), run the same suite against an already-installed
+> Chromium-based browser: drop a local config under the gitignored `.scratch/` that only
+> changes `channel` to `msedge`, then
+> `npx playwright test --config .scratch/pw-local.config.ts`. Tests, assertions and the
+> webServer are unchanged — "it doesn't run here" is the main reason e2e went unexecuted.
 
 Where to look when something looks wrong:
 
@@ -105,11 +123,25 @@ Where to look when something looks wrong:
 
 ### Quality gates
 
-- Jest unit tests covering scoring, calibration-sample filtering, resolution,
-  revision planning, LLM parsing, CLI argument parsing, and form behavior.
+- Jest unit tests covering scoring, calibration-sample filtering, resolution
+  (including the endorsement-triggered rescore), revision planning, decision
+  rubric/version rules, credential→identity dispatch, LLM parsing, CLI argument
+  parsing, and form behavior. Per-file `coverageThreshold` entries in
+  `jest.config.ts` gate the logic-dense modules and the calibration endpoint.
+- `cli/parity.test.ts` reads both interaction surfaces from source and fails when
+  a procedure is reachable on only one of them without a registered reason
+  (AGENTS.md §10 / ADR-0023).
 - Playwright end-to-end tests: the human sign-in → create → resolve journey, and
-  the agent CLI → web endorse / proposal-confirm journey.
-- CI runs lint + typecheck + unit tests + e2e on every pull request.
+  the agent CLI → web endorse / proposal-confirm journey. Plus the database-level
+  `SetNull` regression on a real Postgres.
+- CI runs lint + typecheck + `test:coverage` + e2e + `next build` on every pull
+  request, and uploads the coverage and Playwright reports as artifacts.
+
+> **Required status checks:** the gate only blocks a merge if `Test / unit` and
+> `Test / e2e` are configured as required status checks in the repository's
+> branch protection. That setting lives in GitHub's repository settings, not in
+> the checkout, so it cannot be verified from the source tree — re-confirm it
+> whenever job names change in `.github/workflows/test.yml`.
 
 ## Vision: agent-native decision hygiene
 

@@ -4,8 +4,10 @@ import { z } from "zod"
 import { sendEmailReadyToResolveNotification } from "./notifications"
 import { parseDecision } from "./llm_parse"
 import { backendAnalyticsEvent } from "../_utils_server"
+import { generateApiKey } from "../api_key"
 import prisma from "../prisma"
 import { agentRouter } from "./agent_router"
+import { decisionRouter } from "./decision_router"
 import { feedbackRouter } from "./feedback_router"
 import { importRouter } from "./import_router"
 import { questionRouter } from "./question_router"
@@ -15,6 +17,7 @@ import { publicProcedure, router } from "./trpc_base"
 
 export const appRouter = router({
   agent: agentRouter,
+  decision: decisionRouter,
   question: questionRouter,
   tags: tagsRouter,
   import: importRouter,
@@ -134,9 +137,7 @@ export const appRouter = router({
       return null
     }
 
-    const newApiKey =
-      Math.random().toString(36).substring(2, 15) +
-      Math.random().toString(36).substring(2, 15)
+    const newApiKey = generateApiKey()
     await prisma.user.update({
       where: {
         id: ctx.userId,

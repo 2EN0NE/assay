@@ -2,6 +2,8 @@
 
 > 本文件替代原 `todo.md`（`AGENTS.md` 要求 todo.md 在提交后删除，其有用部分归档于此）。
 > `docs/issues/agent-capture-mvp/` 下 8 个 issue 里的"验证记录见 `verification.md`"即指向此处。
+>
+> **那 8 个 issue 里的 AC 复选框未逐条维护**——勾选落在本文的对照表与各 issue 的 `Status` 行；正文里的 `[x]` / `[ ]` 只反映当时的书写状态。读它们时以本文为准。
 
 ## 交付内容
 
@@ -70,4 +72,4 @@ pi-lens 的 TS server 持有 `@prisma/client` 的**陈旧快照**，持续误报
 | 07 结算 / 提案    | 单测覆盖三种判据层级的分支                                   | ✅ `agent_router.test.ts` 新增 5 条：SELF_REPORT 拒绝 / AGENT_OBSERVABLE 提案 / PUBLIC_FACT+来源自行结算 / 无来源降级 / 重复结算拒绝                                                                                                                                                                                          |
 | 08 调度与触达     | 单测覆盖状态机                                               | ✅ `agent_router.test.ts` 新增 5 条：PENDING 过滤 / DELIVERED 记时间与通道 / 未给通道时 in-app / NOT_NEEDED 清空 / 非本人通知拒绝                                                                                                                                                                                             |
 
-> **e2e 未在本机执行**：需要 `npx playwright install chromium`（本机下载失败）。三个 e2e 用例已按真实 UI 元素与 CLI 契约写好，待在可用环境跑一次确认。
+> **e2e 后来已在本机执行**：`npx playwright install chromium` 在本机拉不到 CDN，改用系统 Edge（同为 Chromium 内核）跑通，CI 仍用 chromium（见 README 的 "How to verify" 与 `docs/issues/decision-quality/06-*.md`）。上一版那句"未在本机执行"是记录当时的状态。

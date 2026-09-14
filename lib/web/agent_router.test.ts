@@ -23,6 +23,7 @@ jest.mock("../prisma", () => ({
   __esModule: true,
   default: {
     question: { create: jest.fn(), findFirst: jest.fn(), findMany: jest.fn() },
+    decision: { findFirst: jest.fn() },
     forecast: { create: jest.fn(), findMany: jest.fn(), updateMany: jest.fn() },
     notification: {
       create: jest.fn(),
@@ -76,6 +77,9 @@ const forecastUpdateMany = (
 const questionFindMany = (
   prisma as unknown as { question: { findMany: jest.Mock } }
 ).question.findMany
+const decisionFindFirst = (
+  prisma as unknown as { decision: { findFirst: jest.Mock } }
+).decision.findFirst
 const rescoreResolvedQuestion = (
   jest.requireMock("./resolution") as { rescoreResolvedQuestion: jest.Mock }
 ).rescoreResolvedQuestion
@@ -378,6 +382,49 @@ describe("触达状态机（ADR-0017 / issue 08）", () => {
       asOwner().reportDelivery({ notificationId: "n1", outcome: "DELIVERED" }),
     ).rejects.toThrow(/找不到该通知/)
     expect(notificationUpdate).not.toHaveBeenCalled()
+  })
+})
+
+describe("agent.createPrediction 的决策归属（ADR-0019 · ticket 03）", () => {
+  it("创建时可直接指定所属决策", async () => {
+    decisionFindFirst.mockResolvedValue({ id: "d1" })
+    questionCreate.mockResolvedValue({ id: "q1" })
+
+    await asOwner().createPrediction({ ...BASE, decisionId: "d1" })
+
+    expect(decisionFindFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "d1", userId: "user-1" },
+      }),
+    )
+    expect(questionCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ decisionId: "d1" }),
+      }),
+    )
+  })
+
+  it("不给 decisionId 时 decisionId 落为 null，而不是 undefined", async () => {
+    questionCreate.mockResolvedValue({ id: "q1" })
+
+    await asOwner().createPrediction({ ...BASE })
+
+    expect(decisionFindFirst).not.toHaveBeenCalled()
+    expect(questionCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ decisionId: null }),
+      }),
+    )
+  })
+
+  it("不能挂到别人的决策上——挂之前就拒，不落库", async () => {
+    decisionFindFirst.mockResolvedValue(null)
+
+    await expect(
+      asOwner().createPrediction({ ...BASE, decisionId: "d-of-someone-else" }),
+    ).rejects.toThrow(/找不到该决策/)
+
+    expect(questionCreate).not.toHaveBeenCalled()
   })
 })
 

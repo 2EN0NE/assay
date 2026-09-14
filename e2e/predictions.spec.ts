@@ -40,7 +40,9 @@ test("sign in with email magic link, create a prediction, and resolve it", async
 
   // 1. Sign in via email magic link
   await page.goto("/")
-  await page.getByRole("button", { name: /log in|sign up/i }).click()
+  // 首页有两个匹配 /log in|sign up/i 的按钮（"Log in or sign up" 与 hero 区的
+  // "Sign up to predict"），模糊匹配会 strict mode 报错。点名要打开登录表单的那一个。
+  await page.getByRole("button", { name: "Log in or sign up" }).click()
   await page.getByPlaceholder(/email/i).fill(email)
   await page.getByRole("button", { name: /sign in|continue|submit/i }).click()
 
@@ -54,10 +56,9 @@ test("sign in with email magic link, create a prediction, and resolve it", async
 
   // 2. Create a binary prediction
   const title = `E2E: will this test pass? (${Date.now()})`
-  await page
-    .getByPlaceholder(/e\.g\.|predict|question/i)
-    .first()
-    .fill(title)
+  // 题目输入框：placeholder 是产品文案（“Will I finish my project by Friday?”），
+  // 按文案写会随文案漂移。这里是首页表单里的第一个文本框。
+  await page.locator("main").getByRole("textbox").first().fill(title)
   await page
     .getByRole("button", { name: /predict|create|submit/i })
     .first()
@@ -70,8 +71,10 @@ test("sign in with email magic link, create a prediction, and resolve it", async
   await page.getByRole("link", { name: title }).click()
   await page.waitForURL(/\/q\//)
 
-  await page.getByRole("button", { name: "Resolve" }).click()
-  await page.getByRole("button", { name: "Yes", exact: true }).click()
+  // exact 不可省：卡上还有一颗 “Resolves tomorrow”，按子串匹配会同时命中两颗按钮。
+  await page.getByRole("button", { name: "Resolve", exact: true }).click()
+  // 结算菜单是 HeadlessUI 的 Menu：选项的 role 是 menuitem，不是 button。
+  await page.getByRole("menuitem", { name: "Yes", exact: true }).click()
 
   // 4. The resolution is visible to the user (event log shows "Resolved")
   await expect(page.getByText(/Resolved/).first()).toBeVisible()

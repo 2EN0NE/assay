@@ -29,6 +29,24 @@ import { InfoButton } from "../ui/InfoButton"
 import { PromptDialog } from "../ui/PromptDialog"
 import { QuestionDetailsOption } from "./QuestionDetailsOptions"
 
+/**
+ * 展开区的动画参数。
+ *
+ * HeadlessUI v2 的 `<Transition>` 只接受**单个**子元素：给它两个子元素时，它会
+ * 把子元素包成 Fragment 再往上挂 ref，于是运行时抛
+ * "Passing props on Fragment!"——错误边界接住后整张卡片变成 "Something went wrong"
+ * （e2e 里 5 条用例因此全红）。展开区里有两个面板，所以用同一份参数开两条同步的
+ * Transition：DOM 结构不变，动画参数也只有一份。
+ */
+const expandTransition = {
+  enter: "transition ease-out duration-100",
+  enterFrom: "transform opacity-0 scale-98 translate-y-[-0.5rem]",
+  enterTo: "transform opacity-100 scale-100 translate-y-0",
+  leave: "transition ease-in duration-75",
+  leaveFrom: "transform opacity-100 scale-100 translate-y-0 ",
+  leaveTo: "transform opacity-0 scale-98 translate-y-[-0.5rem]",
+}
+
 export function Question({
   question,
   alwaysExpand,
@@ -236,18 +254,24 @@ export function Question({
 
         <Transition
           show={alwaysExpand || manuallyExpanded}
-          enter="transition ease-out duration-100"
-          enterFrom="transform opacity-0 scale-98 translate-y-[-0.5rem]"
-          enterTo="transform opacity-100 scale-100 translate-y-0"
-          leave="transition ease-in duration-75"
-          leaveFrom="transform opacity-100 scale-100 translate-y-0 "
-          leaveTo="transform opacity-0 scale-98 translate-y-[-0.5rem]"
+          {...expandTransition}
         >
           <QuestionDetails
             question={question}
             hideOthersForecastsIfSharedWithUser={alwaysExpand}
           />
-          <AgentRecordPanel question={question} />
+        </Transition>
+        <Transition
+          show={alwaysExpand || manuallyExpanded}
+          {...expandTransition}
+        >
+          {/* HeadlessUI v2 会把 ref 交给 Transition 的子元素并断言它落在了真实 DOM 节点上
+              （"Did you forget to passthrough the `ref`"）。AgentRecordPanel 是普通函数组件，
+              而且没有 agent 痕迹时直接 `return null`——两种情况都没有 DOM 节点可接 ref。
+              用一层无样式的 div 保证 ref 总有落点，面板自己的 `mt-4` 不受影响。 */}
+          <div>
+            <AgentRecordPanel question={question} />
+          </div>
         </Transition>
       </motion.div>
 

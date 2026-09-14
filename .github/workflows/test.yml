@@ -2,10 +2,15 @@ name: Test
 
 on:
   pull_request:
+  # 合并后也在 main 上跑一遍：直推 main 也留下痕迹（真正阻断合并靠分支保护里的
+  # required status check，那不在仓库里）。
+  push:
+    branches: [main]
 
 jobs:
   unit:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -28,8 +33,19 @@ jobs:
       - name: Run unit tests with coverage gates
         run: npm run test:coverage
 
+      # 失败时用例清单与覆盖率要能被打开发看，而不是只能翻日志（test:coverage 的
+      # 门槛失败只打印一行，没有行号）。
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 14
+
   e2e:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -80,3 +96,18 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 14
+
+      # 生产构建也必须过门（tsc 与 lint 都不覆盖 Next 的构建期检查：页面导出、
+      # getStaticProps 的返回形状、SSR 期依赖）。放在这个 job 里是因为
+      # `pages/global-stats.tsx` 的 getStaticProps 会读库，需要已迁移的 Postgres——
+      # 这里正好有一个，不必再起一个 job。
+      - name: Build (production)
+        run: npx next build
+        env:
+          # pi-lens-ignore: line-length
+          DATABASE_URL: postgresql://fatebook:postgres@localhost:5432/fatebook_development
+          # pi-lens-ignore: line-length
+          DATABASE_DIRECT_URL: postgresql://fatebook:postgres@localhost:5432/fatebook_development
+          NEXTAUTH_URL: http://localhost:3000/api/auth
+          HOST_URL: http://localhost:3000
+          SECRET: e2e-test-secret-do-not-use-in-production

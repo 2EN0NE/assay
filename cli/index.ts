@@ -1,8 +1,14 @@
 import prisma from "../lib/prisma"
 import { log } from "../lib/_log"
-import { CliError, emitJson, installStdoutGuard, parseArgs } from "./args"
+import {
+  CliError,
+  emitJson,
+  installStdoutGuard,
+  optionalString,
+  parseArgs,
+} from "./args"
 import { commands, findCommand } from "./commands"
-import { createAgentSession } from "./context"
+import { createAgentSession, createAnonymousSession } from "./context"
 
 function printHelp(): void {
   const lines = [
@@ -16,7 +22,8 @@ function printHelp(): void {
     ),
     "",
     "约定：stdout 只输出 JSON（可直接管道给 jq）；日志一律走 stderr。",
-    "owner 身份来自环境变量 FATEBOOK_AGENT_USER_EMAIL。",
+    "身份来源（ADR-0026）：--api-key > FATEBOOK_AGENT_API_KEY > FATEBOOK_AGENT_USER_EMAIL。",
+    "没有身份时：`init` 建一个（不需要邮件），用 `whoami` 看当前身份。",
     "",
     "注：不加 --silent 时 npm 会把自己的横幅写进 stdout，破坏上述约定。",
   ]
@@ -41,13 +48,28 @@ async function main(): Promise<void> {
   }
 
   const args = parseArgs(rest)
-  const session = await createAgentSession()
-  log(`owner=${session.email} command=${command.name}`)
+  // 身份在每一条命令里自带（ADR-0026）：不从磁盘读"当前身份"。
+  // `init` 例外——它必须在身份存在之前运行。
+  const session = command.withoutIdentity
+    ? {
+        ...createAnonymousSession(),
+        userId: "",
+        email: "",
+        credentialSource: "none" as const,
+      }
+    : await createAgentSession({ apiKey: optionalString(args, "api-key") })
+  log(
+    session.email
+      ? `owner=${session.email} command=${command.name}`
+      : `command=${command.name}`,
+  )
 
   const result = await command.run(args, {
     agent: session.agent,
+    decision: session.decision,
     userId: session.userId,
     email: session.email,
+    credentialSource: session.credentialSource,
   })
   emitJson(result)
 }

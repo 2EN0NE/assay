@@ -112,6 +112,11 @@ model Question {
   resolutionRationale          String?
   revisions                    Revision[]
   proposals                    ResolutionProposal[]
+  // ADR-0019：Prediction 归属 Decision，至多一个；删容器不删预测（SetNull）
+  decisionId                   String?
+  decision                     Decision?                @relation(fields: [decisionId], references: [id], onDelete: SetNull)
+
+  @@index([decisionId])
 }
 
 model Tag {
@@ -185,6 +190,7 @@ model User {
   tournaments              Tournament[]
   notifications            Notification[]
   questionOptions          QuestionOption[] @relation("author")
+  decisions                Decision[]
 
   // Used by next-auth:
   emailVerified DateTime?
@@ -363,17 +369,24 @@ model Notification {
 
 // 对已冻结字段（判据 / 期限 / 锚点）的修改留痕。首次 Forecast 之前
 // 的改动不算修订，因此不在本表留记录。
+//
+// ADR-0012 的同一机制后也承载 **Decision 叙事字段**的改写（ADR-0020）：主体
+// 既可能是 Question 也可能是 Decision，用 `questionId` / `decisionId` 二者恰有
+// 其一表达——这条"恰有其一"由迁移里的 CHECK 约束强制（Prisma schema 表达不了）。
 model Revision {
-  id         String   @id @default(cuid())
-  createdAt  DateTime @default(now())
-  questionId String
-  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  id         String    @id @default(cuid())
+  createdAt  DateTime  @default(now())
+  questionId String?
+  question   Question? @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  decisionId String?
+  decision   Decision? @relation(fields: [decisionId], references: [id], onDelete: Cascade)
   field      String
   oldValue   String?
   newValue   String?
   reason     String?
 
   @@index([questionId])
+  @@index([decisionId])
 }
 
 // 跟踪 Agent 提出的结算建议。公共事实类若无来源则不得直接结算，
@@ -410,4 +423,52 @@ model VerificationToken {
   expires    DateTime
 
   @@id([identifier, token])
+}
+
+// 一次决策（ADR-0001 / ADR-0019）。承载决策时点的推理过程，并包含 0..n 个
+// Prediction（复用 Question/Forecast）。叙事字段不参与任何评分。
+model Decision {
+  id              String                   @id @default(cuid())
+  createdAt       DateTime                 @default(now())
+  userId          String
+  user            User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  statement       String                   @db.Text
+  reasoning       String?                  @db.Text
+  expectedOutcome String?                  @db.Text
+  knownInfo       String?                  @db.Text
+  unknownInfo     String?                  @db.Text
+  // ADR-0020：该决策下任一 Prediction 结算后清单锁定，锁定即写时间（不回退）
+  rubricLockedAt  DateTime?
+  // ADR-0020 第四点：该决策计分时适用的清单条目集合版本。条目增删只能新建版本，
+  // 既有版本的条目列表不得改写——历史决策因此按自己的版本解释。
+  rubricVersion   Int                      @default(1)
+  // ADR-0020 第六点：清单写在"结果揭晓之后"的时点标记。只在对一条**已结算**的
+  // Prediction 做挂载时写下，且只写一次——那条路径是唯一能绕过锁定的绕道。
+  rubricRecordedAfterOutcomeAt DateTime?
+  questions       Question[]
+  rubricEntries   DecisionRubricEntry[]
+  // 叙事字段的改写留痕（ADR-0012）：旧值 / 新值 / 时间 / 理由
+  revisions       Revision[]
+
+  @@index([userId])
+}
+
+// 清单完成情况，每条一行（ADR-0016 要求记录每条而非只存总分）。
+model DecisionRubricEntry {
+  id         String           @id @default(cuid())
+  decisionId String
+  decision   Decision         @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+  // ADR-0020：存稳定标识而非文案——文案改写不改写历史语义
+  itemKey    String
+  status     RubricItemStatus
+  recordedAt DateTime         @default(now())
+
+  @@unique([decisionId, itemKey])
+  @@index([decisionId])
+}
+
+// ADR-0020：只有二值，没有"不适用"——那是个自我开脱的口子。
+enum RubricItemStatus {
+  DONE
+  NOT_DONE
 }

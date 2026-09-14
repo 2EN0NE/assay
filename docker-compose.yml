@@ -1,6 +1,7 @@
 services:
   mail:
-    image: axllent/mailpit:latest
+    # 钉版本：`latest` 漂移会让 e2e 环境不可复现（本地已验证的是 v1.31.1）
+    image: axllent/mailpit:v1.31.1
     ports:
       - "1025:1025" # SMTP
       - "8025:8025" # Web UI

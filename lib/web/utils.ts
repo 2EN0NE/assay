@@ -218,6 +218,11 @@ export async function invalidateQuestion(
     },
   )
   await utils.question.getQuestion.invalidate({ questionId: question.id })
+  // `AgentRecordPanel`（记录状态）读的是 `agent.*` 的独立查询。不同步失效的话，
+  // 改完期限 / 结算之后“修订历史”“待确认的结算提案”要手动刷新页面才出现——
+  // 而 ADR-0012 要求的正是“改了就看得见”（这条曾是 e2e 红的原因之一）。
+  void utils.agent.listRevisions.invalidate({ questionId: question.id })
+  void utils.agent.listProposals.invalidate()
   void utils.question.getOnboardingStage.invalidate()
 }
 

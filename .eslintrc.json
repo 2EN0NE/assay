@@ -125,6 +125,33 @@
       "rules": {
         "no-console": "off"
       }
+    },
+    {
+      "files": [
+        "./lib/_scoring.ts",
+        "./lib/web/calibration.ts",
+        "./lib/web/resolution.ts"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "**/decision_rubric",
+                  "**/decision_rubric.ts",
+                  "**/decision_router",
+                  "**/decision_router.ts",
+                  "**/decisions",
+                  "**/decisions.ts"
+                ],
+                "message": "决策质量分与结果分必须脉钩（ADR-0020）：计分 / 校准 / 结算侧不得依赖决策模块。此前用自研的源码文本断言守这条，会命中注释（误报）、又会漏经 barrel 的 re-export（漏报）；已知盲区是 bare barrel / 路径别名，将来若要图级强制应换依赖图工具。"
+              }
+            ]
+          }
+        ]
+      }
     }
   ]
 }

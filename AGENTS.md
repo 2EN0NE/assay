@@ -225,6 +225,21 @@ When tests fail:
 
 ---
 
+### 10. Interaction-Surface Parity (CLI ⟷ Web)
+
+The CLI and the Web UI are **two interaction surfaces over one set of capabilities — not two products**. For every capability this project defines (Decision, Prediction, rubric and narrative, settlement, delivery), **if one surface has it, the other must have it**. Differences are allowed in _form and habit_ only: the CLI serves agents and scripts (deterministic JSON, one command), the Web serves humans (side-by-side, colour, clickable). A difference in form is not a difference in capability.
+
+- **Scope**: this project's own feature surface. Capabilities inherited from upstream fatebook (Slack, Discord, the Chrome extension, tournaments, blog) are **not** covered — most are already outside the MVP per ADR-0013.
+- **Unit of parity**: a tRPC procedure. A procedure reachable on only one surface must be registered as a deliberate exception, **with a reason**.
+- **Deliberate exceptions** are listed, never silently tolerated. The first is _sign-in_: the Web signs in by email/OAuth, the CLI by credential — the capability ("prove who I am and obtain a credential") is identical, the form cannot be. Current list: [ADR-0023](docs/adr/0023-interaction-surface-parity.md).
+- **Enforcement**: `cli/parity.test.ts` is the gate. It reads each surface's reachability **from source** — the CLI surface from `cli/commands.ts`, the Web surface from `api.<router>.<name>` references under `pages/` and `components/` — then compares every procedure of the `agent` and `decision` routers against the exception list: a procedure reachable on only one surface, with no registered reason, is named by the failing test. A stale exception (the other surface has since caught up) turns it red too, prompting the row's removal.
+
+  The price is that the exception list is **maintained inside the test file** (every entry must carry a reason, copied from ADR-0023's "current exception list"): adding a procedure without deciding where it lands on the other surface fails the gate. That is deliberate — a "silent absence" is exactly what this rule exists to prevent.
+
+Rationale, rejected alternatives and the current exception list: [ADR-0023](docs/adr/0023-interaction-surface-parity.md).
+
+---
+
 ## Task Lifecycle (Automated)
 
 This section describes the automated task lifecycle for AI agents. When properly configured, the agent can automatically pick up tasks, implement them in isolated workspaces, commit changes, and merge to main.
@@ -568,6 +583,23 @@ fatebook/
 - Tests go in `*.test.tsx` or `*.test.ts` files
 - Import `@testing-library/jest-dom` for custom matchers
 - Use `jest.useFakeTimers()` for time-dependent tests
+- **Never put a test file under `pages/`**: Next.js turns every `.ts`/`.tsx` file there into a
+  route, `*.test.ts` included — `next build` will happily emit `/api/<name>.test` as an
+  endpoint that tries to load jest modules in production. A test for a page or API route
+  belongs in the domain module it guards (e.g. `lib/web/`) and imports the handler from
+  `pages/`.
+
+### 单元 vs e2e 的分工
+
+| 层          | 位置                               | 该放什么                                                                                                                 |
+| ----------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| 单元 / 组件 | `**/*.test.ts(x)`（不能放 pages/） | 纯逻辑密集点：计分、状态机、修订判定、CLI 参数与身份分发、清单版本。数据库一律用 `jest.mock` 假客户端，不连真库。        |
+| 集成        | e2e 里的真库用例                   | 数据库级行为：`onDelete: SetNull`、CHECK 约束、迁移后果。只有真库能验，不要用单测假装覆盖了它。                          |
+| 端到端      | `e2e/*.spec.ts`                    | 用户可感知的完整旅程：CLI 写入 → Web 看见 → 人背书/确认；登录 → 建预测 → 结算。断言 stdout/stderr/exit code 与界面文案。 |
+
+**覆盖率只用于守住不减，不用于证明正确**：`jest.config.ts` 的 `coverageThreshold` 只给
+逻辑最密的模块与校准图端点设下限（50–80%，留出余量）。门槛贴着实测值（曾经 49.91% vs 50%）
+会让它在换 Node 版本时自己变色——设阈值时留 5pp 以上。
 
 ```typescript
 import "@testing-library/jest-dom"
@@ -760,12 +792,15 @@ If you make a mistake later, you can always use `git revert` or `git reset` to f
 
 ### 分层验证命令
 
-| 层                    | 命令                | 前置                                                               |
-| --------------------- | ------------------- | ------------------------------------------------------------------ |
-| 类型                  | `npm run typecheck` | 无                                                                 |
-| Lint                  | `npm run lint`      | 无                                                                 |
-| 单元 / 组件           | `npm test`          | 无                                                                 |
-| 端到端（agent → Web） | `npm run test:e2e`  | `docker compose up -d db mail` + `npx playwright install chromium` |
+| 层                    | 命令                    | 前置                                                               |
+| --------------------- | ----------------------- | ------------------------------------------------------------------ |
+| 类型                  | `npm run typecheck`     | 无                                                                 |
+| Lint                  | `npm run lint`          | 无                                                                 |
+| 单元 / 组件           | `npm test`              | 无                                                                 |
+| 单元 + 覆盖率门槛     | `npm run test:coverage` | 无（**CI 跑的是这条**；本地只跑 `npm test` 会看不到门槛）          |
+| 端到端（agent → Web） | `npm run test:e2e`      | `docker compose up -d db mail` + `npx playwright install chromium` |
+
+> **本地要跑与 CI 完全一致的那条**：`.github/workflows/test.yml` 的门禁是 `test:coverage`（`jest.config.ts` 的 `coverageThreshold` 只在它下面生效）。历史上交付记录里写的都是 `npm test`，于是某个新模块跌破阈值时**本地全绿、CI 全红**，谁都没看见。`.husky/pre-push` 现在跑的就是 `test:coverage`。
 
 ### 可观测性契约
 
@@ -794,6 +829,29 @@ If you make a mistake later, you can always use `git revert` or `git reset` to f
 
 ---
 
+## 文档声明必须可在仓库里被验证
+
+**任何"已实现 / 已完成"的陈述都要能在当前仓库里被检验**：AC 勾选、`Status` 行、CLI 命令的 `summary`、README 的步骤、文档里的字段名，一律如此。做不到就只有两条路——**实现它**，或**把陈述改成如实并注明推迟**；不要留许愿式文档。
+
+判据是可核对的：说"已完成"就要能指出**在哪里可跑、在哪一行可读**；指不出来就不是已完成。这条并非洁癖——一次评审从同一种毛病里抓出多处：数据模型文档写着 `note`（可选补充）而全仓无人写、无人显示；`show-decision` 的 `summary` 称返回"分数"而实现只回标量；ticket 的 AC 勾着"叙事仍可补充"，而那个写入口没有任何调用方；多处 `[x]` 与其实现不符（含一条**假 `[x]`**：称某个词条已修正，而实际只改了正文、没改标题）。**声明与实现不一致时，后来的人会按声明行事，而错的是声明。**
+
+同理适用于**数字快照**："全量 N 个测试通过"这类数字一交付就陈旧，因此**优先给可重跑的命令**（`npm test` / `npm run test:e2e`）；确实要记数字，就必须标明它是**当时快照**——`docs/issues/agent-capture-mvp/verification.md` 是正例：正文给数字，紧跟一句"上表两组数字是记录当时的状态"。
+
+---
+
+## ADR 只追加，但必须写明它改掉了哪一句
+
+ADR **只追加、不回改**：历史决策保持原样，新结论写进新的一篇。代价是**同一件事会在多篇里留下多个"最新版本"**，而读者无从判断哪个作数。一次针对 `docs/adr/` 的评审就从这条漏洞里抓出成组的矛盾：ADR-0007 用"有没有明确指令"定义 provenance，而 ADR-0008 明确说判据取"数字的来源"、两者会分歧，0007 的正文至今没改；ADR-0020 定的清单锁定不可回退，与 ADR-0012"已冻结字段可改、留痕即可"并存；ADR-0006 立下"必选"的保证，而 ADR-0005 / 0015 / 0017 把唯一的兑现者（时机）整体移出本仓库。
+
+因此：**每篇新 ADR 必须显式写出它修正了谁**——哪一篇、哪一句、原来怎么规定、现在改成什么。两种改法分别这样写：
+
+- **取代**：`本 ADR 取代 ADR-00XX 关于「…」的规定（原句见该篇第 N 节）。`
+- **收窄 / 补充**：`ADR-00XX 的「…」在本 ADR 下收窄为「…」，其余不变。`
+
+没有改动就不必写。判据是可核对的：**读那篇旧 ADR 时，能顺着指回新 ADR 的那句话知道"此处已变"**；做不到就会出现两篇都是最新版的局面——那不是保留历史，而是两套规则并行，且没人知道自己读的是哪一套。
+
+---
+
 ## 概率显性化（对话层）
 
 本节管"当事人嘴里的说法"如何变成一个 `Forecast` 的概率数字。术语见 `CONTEXT.md` 的 `Elicitation / 概率显性化`，问法见 `.pi/skills/decision-capture/SKILL.md` 第 3 步。
@@ -816,7 +874,7 @@ If you make a mistake later, you can always use `git revert` or `git reset` to f
 | `emitJson()`       | `cli/args.ts` | **stdout** | CLI 的**数据**。唯一合法写入者，由 `installStdoutGuard()` 守卫——非 `emitJson` 的 stdout 写入**当场抛错** |
 | `log()` / `warn()` | `lib/_log.ts` | **stderr** | 其它一切：诊断、警告、CLI 的用户可见输出、Prisma 事件、`--help` 文本                                     |
 
-- **项目代码不要直接调用 `console.*`**，用 `lib/_log.ts` 的 `log` / `warn`。ESLint 的 `no-console` 就是这条契约的执行者（`.eslintrc.json`；`lib/_log.ts` 自身与测试文件豁免）。注意现有 `lint` 脚本只覆盖 `lib/ pages/ components/`——**`cli/` 不在其中**，改了 CLI 要自己看一眼。
+- **项目代码不要直接调用 `console.*`**，用 `lib/_log.ts` 的 `log` / `warn`。ESLint 的 `no-console` 就是这条契约的执行者（`.eslintrc.json`；`lib/_log.ts` 自身与测试文件豁免）。`npm run lint` 的范围已含 `cli/` 与 `e2e/`（`package.json`），所以 CLI 里误用 `console.log` 会被 CI 拦住。
 - **`log` 用 `console.error`、`warn` 用 `console.warn`，这是刻意的**：Node 里**只有这两个方法写 stderr**，`console.log` / `console.info` 写的是 stdout。浏览器里它们仍是普通 console 方法，行为不变。
 - **需要上下文时把来源写进消息本身**（例如 `prisma:info …`），不靠前缀约定。早先 CLI 有一套自己的 `log` 实现与 `[agent]` 前缀，已删除——**两套实现比少一个前缀糟得多**。`lib/prisma.ts` 的 event 订阅、`--help` 文本、CLI 的用户可见输出现在都经同一个出口。
 - **新增任何会写输出的库之前，先确认它的输出去哪儿。** Prisma 默认把 `info` 写到 stdout（足以让下游 `JSON.parse` 崩掉），现由 `lib/prisma.ts` 的 event 模式接住并统一改道。

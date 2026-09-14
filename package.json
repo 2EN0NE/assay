@@ -11,7 +11,7 @@
     "start": "next start",
     "vercel-build": "prisma generate --no-hints && prisma migrate deploy && next build",
     "ssl-proxy": "npx local-ssl-proxy --key localhost-key.pem --cert localhost.pem --source 3000 --target 3005",
-    "lint": "next lint --dir lib --dir pages --dir components",
+    "lint": "next lint --dir lib --dir pages --dir components --dir cli --dir e2e",
     "format": "prettier --write .",
     "studio": "prisma studio",
     "zip": "echo \"have you set isDev=false and incremented version num?\" && bash zip-extensions.sh",
@@ -19,7 +19,7 @@
     "test": "LC_ALL=en-US jest",
     "test:coverage": "LC_ALL=en-US jest --coverage",
     "test:e2e": "playwright test",
-    "dev:e2e": "dotenv next dev -- -p 3000",
+    "dev:e2e": "NEXTAUTH_URL=http://localhost:3000/api/auth HOST_URL=http://localhost:3000 dotenv next dev -- -p 3000",
     "agent": "dotenv -e .env -- tsx cli/index.ts",
     "typecheck": "tsc --noEmit"
   },

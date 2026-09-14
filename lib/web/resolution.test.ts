@@ -1,4 +1,10 @@
-import { Forecast, Question, QuestionOption, Resolution } from "@prisma/client"
+import {
+  Forecast,
+  Question,
+  QuestionOption,
+  QuestionType,
+  Resolution,
+} from "@prisma/client"
 import { Prisma } from "@prisma/client"
 import type { QuestionWithForecastsAndScores } from "../../prisma/additional"
 
@@ -27,9 +33,16 @@ jest.mock("../prisma", () => {
   return {
     __esModule: true,
     default: {
-      question: { update: jest.fn(), delete: jest.fn() },
-      questionOption: { update: jest.fn(), updateMany: jest.fn() },
+      question: { update: jest.fn(), delete: jest.fn(), findUnique: jest.fn() },
+      questionOption: {
+        update: jest.fn(),
+        updateMany: jest.fn(),
+        findMany: jest.fn(),
+      },
       questionScore: { deleteMany: jest.fn(), upsert: jest.fn() },
+      // ADR-0020 第五点：结算路径顺手写决策的锁定时点。这里是结果分的路径，
+      // 刻意不 import 决策模块（`.eslintrc.json` 的 no-restricted-imports 守着）。
+      decision: { updateMany: jest.fn() },
       $transaction: jest.fn((arg: unknown) => {
         if (Array.isArray(arg)) return Promise.all(arg)
         if (typeof arg === "function") {
@@ -45,6 +58,8 @@ jest.mock("../prisma", () => {
 import prisma from "../prisma"
 import {
   deleteQuestion,
+  handleQuestionResolution,
+  rescoreResolvedQuestion,
   scoreQuestion,
   scoreQuestionOptions,
   undoQuestionOptionResolution,
@@ -53,6 +68,9 @@ import {
 
 const DAY = 24 * 60 * 60 * 1000
 
+// 递增计数器而不是 Math.random()：测试输入应当可复现（同一 commit 跑两次得到同一组数据）。
+let nextForecastId = 1
+
 function makeForecast(
   userId: string,
   forecast: number,
@@ -60,7 +78,7 @@ function makeForecast(
   endorsed = true,
 ): Forecast {
   return {
-    id: Math.floor(Math.random() * 100000),
+    id: nextForecastId++,
     createdAt,
     comment: null,
     forecast: new Prisma.Decimal(forecast),
@@ -291,5 +309,137 @@ describe("deleteQuestion", () => {
     expect(jest.mocked(prisma.question.delete)).toHaveBeenCalledWith({
       where: { id: "q1" },
     })
+  })
+})
+
+/**
+ * `dbResolveQuestion` 的返回形状：结算后的 Question 加上通知循环要用的关系。
+ */
+function makeResolvedQuestionWithRelations(
+  resolution: Resolution,
+): QuestionWithForecastsAndScores {
+  return {
+    ...makeResolvedQuestion(resolution),
+    resolved: true,
+    userId: "author",
+    type: QuestionType.BINARY,
+    user: { id: "author", name: "作者" },
+    // 通知循环会读 `forecasts[].user`（`filterToUniqueIds` 不做空值过滤）
+    forecasts: [
+      { ...makeForecast("forecaster", 0.9), user: { id: "forecaster" } },
+    ],
+    comments: [],
+    sharedWith: [],
+    sharedWithLists: [],
+    questionScores: [],
+    options: [],
+  } as unknown as QuestionWithForecastsAndScores
+}
+
+describe("rescoreResolvedQuestion（ADR-0008：背书可以发生在结算之后）", () => {
+  it("尚未结算 ⇒ 什么都不写（不补分数，也不改 resolvedAt）", async () => {
+    jest.mocked(prisma.question.findUnique).mockResolvedValue({
+      id: "q1",
+      resolved: false,
+      resolution: null,
+    } as unknown as Question)
+
+    await rescoreResolvedQuestion("q1")
+
+    expect(jest.mocked(prisma.questionScore.upsert)).not.toHaveBeenCalled()
+    expect(jest.mocked(prisma.question.update)).not.toHaveBeenCalled()
+  })
+
+  it("已结算的二元题 ⇒ 按已存结论重算并落 questionScore", async () => {
+    jest
+      .mocked(prisma.question.findUnique)
+      .mockResolvedValue(
+        makeResolvedQuestionWithRelations(
+          Resolution.YES,
+        ) as unknown as Question,
+      )
+
+    await rescoreResolvedQuestion("q1")
+
+    expect(jest.mocked(prisma.questionScore.upsert)).toHaveBeenCalled()
+    // 重算不等于重新结算：resolvedAt 不能被碰
+    expect(jest.mocked(prisma.question.update)).not.toHaveBeenCalled()
+  })
+
+  it("已结算的选项题 ⇒ 走选项计分并落 questionScore（不重新结算）", async () => {
+    const question = {
+      ...makeResolvedQuestion(Resolution.YES),
+      resolved: true,
+      type: QuestionType.MULTIPLE_CHOICE,
+      exclusiveAnswers: false,
+      forecasts: [],
+      options: [
+        makeOption("o1", Resolution.YES, [makeForecast("good", 0.9)]),
+        makeOption("o2", Resolution.NO, [makeForecast("good", 0.9)]),
+      ],
+    }
+    jest
+      .mocked(prisma.question.findUnique)
+      .mockResolvedValue(question as unknown as Question)
+
+    await rescoreResolvedQuestion("q1")
+
+    // 断言落在**选项级**：二元路径写 `good-q1`，选项路径写 `good-o1`。
+    // 排他性（`exclusiveAnswers`）本身由 `scoreQuestionOptions` 那组测试守住；
+    // 这里只证明 rescore 真的走了选项计分路径。
+    expect(jest.mocked(prisma.questionScore.upsert)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { userQuestionComboId: "good-o1" },
+      }),
+    )
+    // 重算不等于重新结算：resolvedAt 不能被碰
+    expect(jest.mocked(prisma.question.update)).not.toHaveBeenCalled()
+  })
+})
+
+describe("handleQuestionResolution（结算入口，ADR-0004）", () => {
+  it("二元题：写 resolved/resolution，计分，并给决策写下锁定时间（ADR-0020 第五点）", async () => {
+    jest
+      .mocked(prisma.question.update)
+      .mockResolvedValue(
+        makeResolvedQuestionWithRelations(Resolution.YES) as unknown as never,
+      )
+
+    await handleQuestionResolution("q1", Resolution.YES, QuestionType.BINARY)
+
+    expect(jest.mocked(prisma.question.update)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "q1" },
+        data: expect.objectContaining({ resolved: true, resolution: "YES" }),
+      }),
+    )
+    expect(jest.mocked(prisma.questionScore.upsert)).toHaveBeenCalled()
+    // 锁定时点只写在结算路径上：背书/拒绝写入那两条路径都不该写它
+    expect(jest.mocked(prisma.decision.updateMany)).toHaveBeenCalledWith({
+      where: { questions: { some: { id: "q1" } }, rubricLockedAt: null },
+      data: { rubricLockedAt: expect.any(Date) },
+    })
+  })
+
+  it("选项题：还有未结算的选项时先不结算、也不计分（等最后一个选项）", async () => {
+    jest
+      .mocked(prisma.questionOption.update)
+      .mockResolvedValue(undefined as never)
+    jest.mocked(prisma.questionOption.findMany).mockResolvedValue([
+      { id: "o1", resolution: null },
+      { id: "o2", resolution: Resolution.YES },
+    ] as unknown as never)
+
+    await handleQuestionResolution(
+      "q1",
+      Resolution.YES,
+      QuestionType.MULTIPLE_CHOICE,
+      "o1",
+    )
+
+    // 题级状态还没到可结算的时候：不计分，也不写决策的锁定时点
+    // （`data: {}` 的那次 update 是选项自己的写入，不是题级结算）
+    expect(jest.mocked(prisma.questionScore.upsert)).not.toHaveBeenCalled()
+    expect(jest.mocked(prisma.decision.updateMany)).not.toHaveBeenCalled()
   })
 })

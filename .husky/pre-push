@@ -1,0 +1,9 @@
+#!/bin/sh
+. "$(dirname "$0")/_/husky.sh"
+
+# 推送前跑一遍**带覆盖率门槛**的单测（约 3 秒）。
+#
+# 为什么不是 `npm test`：CI 跑的是 `npm run test:coverage`（.github/workflows/test.yml），
+# 门槛只在那条命令下生效。用 `npm test` 时本地永远看不到门槛，于是"推上去才发现红"
+# ——这里刻意与 CI 用同一条命令。e2e 仍在 CI 上跑（需要 Docker 与浏览器）。
+npm run test:coverage

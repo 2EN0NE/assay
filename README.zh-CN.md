@@ -118,6 +118,11 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
+`npx playwright install chromium` 拉不到 `cdn.playwright.dev` 时（公司网络 / 代理常见），
+改用系统上已装的 Chromium 内核浏览器跑同一套用例：在 gitignored 的 `.scratch/` 下放一份只把
+`channel` 换成 `msedge` 的本地配置，再 `npx playwright test --config .scratch/pw-local.config.ts`。
+用例、断言与 webServer 都不变——"跑不起来"是 e2e 长期没被执行的主要原因。
+
 ## 项目文档
 
 | 文档                                   | 内容                           |

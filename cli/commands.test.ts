@@ -1,5 +1,11 @@
 import { parseArgs } from "./args"
-import { AgentApi, Command, commands } from "./commands"
+import {
+  AgentApi,
+  Command,
+  CommandContext,
+  DecisionApi,
+  commands,
+} from "./commands"
 
 /**
  * 这些测试锁定"CLI 到过程调用"的翻译层：参数如何解析、非法输入如何被拒。
@@ -22,23 +28,47 @@ const CALLER_METHODS = [
 
 type MockAgent = Record<(typeof CALLER_METHODS)[number], jest.Mock>
 
+const DECISION_METHODS = [
+  "create",
+  "byId",
+  "updateNarrative",
+  "setRubric",
+  "attachPrediction",
+  "detachPrediction",
+] as const
+
+type MockDecision = Record<(typeof DECISION_METHODS)[number], jest.Mock>
+
 function fakeContext(): {
   /** 断言用：保留 jest.Mock 以便检查调用参数 */
   mocks: MockAgent
-  /** 传参用：形状与真实 caller 一致 */
-  session: { agent: AgentApi; userId: string; email: string }
+  decisionMocks: MockDecision
+  /** 传参用：直接复用真实形状，避免手抄一份后与实现脉动 */
+  session: CommandContext
 } {
   const mocks = Object.fromEntries(
     CALLER_METHODS.map((name) => [name, jest.fn().mockResolvedValue(name)]),
   ) as MockAgent
 
+  const decisionMocks = Object.fromEntries(
+    DECISION_METHODS.map((name) => [name, jest.fn().mockResolvedValue(name)]),
+  ) as MockDecision
+
   // SAFETY: mocks 覆盖 CALLER_METHODS 的每一个过程，是被测代码会触达的全部面。
   // 这里只是把 jest.fn 的 `mock` 属性从类型上抹掉，好让被测代码看到真实签名。
   const agent = mocks as unknown as AgentApi
+  const decision = decisionMocks as unknown as DecisionApi
 
   return {
     mocks,
-    session: { agent, userId: "user-1", email: "owner@example.com" },
+    decisionMocks,
+    session: {
+      agent,
+      decision,
+      userId: "user-1",
+      email: "owner@example.com",
+      credentialSource: "api-key-env",
+    },
   }
 }
 
@@ -56,7 +86,7 @@ function command(name: string): Command {
 async function expectRunToThrow(
   cmd: Command,
   args: ReturnType<typeof parseArgs>,
-  session: { agent: AgentApi; userId: string; email: string },
+  session: CommandContext,
   pattern: RegExp,
 ): Promise<void> {
   await expect(
@@ -235,5 +265,140 @@ describe("CLI 命令翻译层", () => {
       limit: undefined,
       now: undefined,
     })
+  })
+})
+
+describe("决策命令（ADR-0019 / 0020 · ticket 05）", () => {
+  it("create-decision 把叙事字段翻译成过程入参", async () => {
+    const { decisionMocks, session } = fakeContext()
+
+    await command("create-decision").run(
+      parseArgs([
+        "--statement",
+        "接这个 offer",
+        "--reasoning",
+        "团队刚融资",
+        "--unknown-info",
+        "会不会被收购",
+      ]),
+      session,
+    )
+
+    expect(decisionMocks.create).toHaveBeenCalledWith({
+      statement: "接这个 offer",
+      reasoning: "团队刚融资",
+      expectedOutcome: undefined,
+      knownInfo: undefined,
+      unknownInfo: "会不会被收购",
+    })
+  })
+
+  it("set-rubric 把 --done/--not-done 的逗号列表翻成条目数组", async () => {
+    const { decisionMocks, session } = fakeContext()
+
+    await command("set-rubric").run(
+      parseArgs([
+        "--decision-id",
+        "d1",
+        "--done",
+        "alternatives, baseRate",
+        "--not-done",
+        "premortem",
+      ]),
+      session,
+    )
+
+    expect(decisionMocks.setRubric).toHaveBeenCalledWith({
+      decisionId: "d1",
+      entries: [
+        { itemKey: "alternatives", status: "DONE" },
+        { itemKey: "baseRate", status: "DONE" },
+        { itemKey: "premortem", status: "NOT_DONE" },
+      ],
+    })
+  })
+
+  it("set-rubric 不给任何条目时传空数组，而不是 undefined", async () => {
+    const { decisionMocks, session } = fakeContext()
+
+    await command("set-rubric").run(parseArgs(["--decision-id", "d1"]), session)
+
+    expect(decisionMocks.setRubric).toHaveBeenCalledWith({
+      decisionId: "d1",
+      entries: [],
+    })
+  })
+
+  it("update-narrative 翻成**局部**更新：没提到的字段是 undefined（不动它们）", async () => {
+    const { decisionMocks, session } = fakeContext()
+
+    await command("update-narrative").run(
+      parseArgs([
+        "--decision-id",
+        "d1",
+        "--reasoning",
+        "当时觉得团队靠谱",
+        "--reason",
+        "复盘时发现当初把因果写反了",
+      ]),
+      session,
+    )
+
+    expect(decisionMocks.updateNarrative).toHaveBeenCalledWith({
+      decisionId: "d1",
+      statement: undefined,
+      reasoning: "当时觉得团队靠谱",
+      expectedOutcome: undefined,
+      knownInfo: undefined,
+      unknownInfo: undefined,
+      reason: "复盘时发现当初把因果写反了",
+    })
+  })
+
+  it("detach-prediction 与 attach-prediction 对称：只需 question-id", async () => {
+    const { decisionMocks, session } = fakeContext()
+
+    await command("detach-prediction").run(
+      parseArgs(["--question-id", "q1"]),
+      session,
+    )
+
+    expect(decisionMocks.detachPrediction).toHaveBeenCalledWith({
+      questionId: "q1",
+    })
+  })
+
+  it("必需参数缺失时报错，且不触达过程", async () => {
+    const { decisionMocks, session } = fakeContext()
+
+    await expectRunToThrow(
+      command("attach-prediction"),
+      parseArgs(["--decision-id", "d1"]),
+      session,
+      /question-id/,
+    )
+    await expectRunToThrow(
+      command("show-decision"),
+      parseArgs([]),
+      session,
+      /decision-id/,
+    )
+
+    expect(decisionMocks.attachPrediction).not.toHaveBeenCalled()
+    expect(decisionMocks.byId).not.toHaveBeenCalled()
+  })
+
+  it("--help 里能看到新命令（它们必须可被发现）", () => {
+    const names = commands.map((entry) => entry.name)
+    expect(names).toEqual(
+      expect.arrayContaining([
+        "create-decision",
+        "attach-prediction",
+        "detach-prediction",
+        "set-rubric",
+        "update-narrative",
+        "show-decision",
+      ]),
+    )
   })
 })

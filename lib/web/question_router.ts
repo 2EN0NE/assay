@@ -1832,7 +1832,7 @@ export function scrubApiKeyPropertyRecursive<T>(
   return obj
 }
 
-async function getUserByApiKeyOrThrow(apiKey: string) {
+export async function getUserByApiKeyOrThrow(apiKey: string) {
   const user = await prisma.user.findFirst({
     where: {
       apiKey,

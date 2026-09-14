@@ -10,6 +10,7 @@ import {
 import { backendAnalyticsEvent } from "../../../lib/_utils_server"
 import prisma from "../../../lib/prisma"
 import { log } from "../../../lib/_log"
+import { subscribeToMailingListSafely } from "../../../lib/web/mailing_list"
 
 function getCookies() {
   /* Copied from:
@@ -107,7 +108,13 @@ export const authOptions: NextAuthOptions = {
 
       if (createdUser.email) {
         log("Subscribing to mailing list", createdUser.email)
-        void subscribeToMailingList(
+        // 订阅是**营销副作用**：它失败绝不能影响注册本身。
+        // 早先这里是裸的 `void subscribeToMailingList(...)`——一旦拒绝就成为
+        // unhandledRejection，而 Next dev 会为它弹出全屏错误层，把整个页面盖住
+        // （e2e 因此全线失败）。兜底逻辑抽在 `subscribeToMailingListSafely` 里，
+        // 好让"失败也不影响注册"这条性质真的被测试锁住。
+        void subscribeToMailingListSafely(
+          subscribeToMailingList,
           createdUser.email,
           createdUser.name || undefined,
         )

@@ -2,3 +2,6 @@
 . "$(dirname "$0")/_/husky.sh"
 
 npx lint-staged
+
+# 类型检查（约 3 秒）：CI 与本地用同一条脚本，避免"本地过、CI 挂"。
+npm run typecheck

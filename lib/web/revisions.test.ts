@@ -1,5 +1,6 @@
 import {
   missingRevisionReason,
+  planNarrativeRevisions,
   planRevisions,
   RevisionSnapshot,
 } from "./revisions"
@@ -102,5 +103,72 @@ describe("missingRevisionReason（ADR-0012：变更冻结字段必须给理由�
     expect(
       missingRevisionReason(drafts, "判据写错了，改回可证伪的版本"),
     ).toBeNull()
+  })
+})
+
+describe("planNarrativeRevisions（ADR-0012 × ADR-0020：补写自由，改写必留痕）", () => {
+  const narrative = {
+    statement: "接这个 offer",
+    reasoning: "当时觉得团队靠谱",
+    expectedOutcome: "半年内上手",
+    knownInfo: null,
+    unknownInfo: null,
+  }
+
+  it("没提到的字段不算改动——局部更新不会把别处抹掉", () => {
+    expect(planNarrativeRevisions(narrative, {})).toEqual([])
+  })
+
+  it("给空白字段补写不算改写：那不是改写，而是当初就没记", () => {
+    expect(
+      planNarrativeRevisions(narrative, {
+        knownInfo: "赛道里有一个直接竞品",
+        unknownInfo: "会不会被收购",
+      }),
+    ).toEqual([])
+  })
+
+  it("值与原来相同 ⇒ 无可留痕", () => {
+    expect(
+      planNarrativeRevisions(narrative, { reasoning: "当时觉得团队靠谱" }),
+    ).toEqual([])
+  })
+
+  it("改写已填写的内容 ⇒ 一条修订，旧值新值都在", () => {
+    expect(
+      planNarrativeRevisions(narrative, { reasoning: "当时觉得团队一般" }),
+    ).toEqual([
+      {
+        field: "reasoning",
+        oldValue: "当时觉得团队靠谱",
+        newValue: "当时觉得团队一般",
+      },
+    ])
+  })
+
+  it("清空已填写的内容也算改写（新值为 null）", () => {
+    expect(
+      planNarrativeRevisions(narrative, { expectedOutcome: null }),
+    ).toEqual([
+      { field: "expectedOutcome", oldValue: "半年内上手", newValue: null },
+    ])
+  })
+
+  it("一次改多处 ⇒ 每个被改的字段各一条（补写的那个不在此列）", () => {
+    expect(
+      planNarrativeRevisions(narrative, {
+        unknownInfo: "会不会被收购",
+        statement: "换个说法",
+      }),
+    ).toEqual([
+      { field: "statement", oldValue: "接这个 offer", newValue: "换个说法" },
+    ])
+  })
+
+  it("同一条「改了就必须给理由」的规则也管叙事（共用 missingRevisionReason）", () => {
+    const drafts = planNarrativeRevisions(narrative, { reasoning: "改了" })
+
+    expect(missingRevisionReason(drafts, undefined)).toMatch(/必须给出理由/)
+    expect(missingRevisionReason(drafts, "因为当初写错了")).toBeNull()
   })
 })
