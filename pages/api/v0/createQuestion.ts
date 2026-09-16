@@ -5,6 +5,7 @@ import { generateErrorMessage } from "zod-error"
 import { backendAnalyticsEvent } from "../../../lib/_utils_server"
 import prisma from "../../../lib/prisma"
 import { emailNewlySharedWithUsers } from "../../../lib/web/question_router"
+import { normalizeDomainName } from "../../../lib/web/domain_tags"
 import { getQuestionUrl } from "../../../lib/web/question_url"
 import { UserListWithAuthorAndUsers } from "../../../prisma/additional"
 
@@ -176,6 +177,8 @@ const createQuestionPublicApi = async (req: Request, res: NextApiResponse) => {
                 },
                 create: {
                   name: tag,
+                  // ADR-0030 §十二：判重折叠大小写；显示保留原样。
+                  nameNormalized: normalizeDomainName(tag),
                   userId: user.id,
                 },
               })),

@@ -14,12 +14,35 @@ import { api } from "../../lib/web/trpc"
  */
 export default function DecisionsPage() {
   const decisions = api.decision.list.useQuery({})
+  // 未标领域的清单：没有它，在 Web 上根本不知道哪些该补（补齐的入口在详情页）。
+  const untagged = api.tags.listUntaggedDecisions.useQuery({})
 
   return (
     <>
       <NextSeo title="决策" />
       <div className="mx-auto max-w-3xl px-4 py-8">
         <h1 className="text-2xl font-semibold">决策</h1>
+
+        {untagged.data && untagged.data.length > 0 && (
+          <section className="mt-6 rounded-box border border-base-300 p-4">
+            <h2 className="text-lg font-medium">还没标领域</h2>
+            <p className="mt-1 text-sm text-neutral-500">
+              领域决定一条决策与哪些经验可比（ADR-0030）。补上之后回看同类决策才有据可依。
+            </p>
+            <ul className="mt-2 space-y-1 text-sm">
+              {untagged.data.map((decision) => (
+                <li key={decision.id}>
+                  <Link href={`/decisions/${decision.id}`} className="link">
+                    {decision.statement}
+                  </Link>
+                  <span className="ml-2 text-neutral-500">
+                    {decision.createdAt.toLocaleDateString()}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         {decisions.isLoading && <span>Loading...</span>}
 

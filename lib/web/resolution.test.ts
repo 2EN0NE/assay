@@ -99,6 +99,12 @@ function makeResolvedQuestion(resolution: Resolution): Question {
     createdAt: new Date(0),
     resolvedAt: new Date(DAY),
     resolution,
+    // ADR-0031 §六：这条 fixture 表示「正常结算了的公共事实题」——有可核查来源，
+    // 所以**所有**押过注的人都计入。无来源的悬空情形由 `settledByOther` 专门造，
+    // 而不是靠 fixture 顺带覆盖：默认应当是正常路径，例外要写出来。
+    resolved: true,
+    resolutionSource: "https://example.org/evidence",
+    confirmedByUserId: "author",
     // 公共事实类是默认路径（也是唯一进入相对分的一类，见 ADR-0002）
     oracleKind: "PUBLIC_FACT",
   } as Question
@@ -198,6 +204,71 @@ describe("scoreQuestion", () => {
       )
     expect(upsertedUserIds).toEqual(["endorsed"])
   })
+
+  /**
+   * ADR-0031 §六：结算的生效范围。守门的对象是"被代签者的校准里不得混进他没有确认过
+   * 的结算"，而它失效的方向是**静默多算**——多一个样本，没有任何东西会变红。
+   */
+  describe("结算生效范围（ADR-0031 §六）", () => {
+    const settledByOther = (
+      extra: Partial<Question> = {},
+    ): QuestionWithForecastsAndScores =>
+      ({
+        ...makeResolvedQuestion(Resolution.YES),
+        resolved: true,
+        // A 确认了这次结算；B 押过注，但没参与确认
+        confirmedByUserId: "A",
+        resolutionSource: null,
+        forecasts: [
+          makeForecast("A", 0.9, new Date(0), true),
+          makeForecast("B", 0.9, new Date(0), true),
+        ],
+        questionScores: [],
+        ...extra,
+      }) as unknown as QuestionWithForecastsAndScores
+
+    it("无来源 + 他人确认 ⇒ 被代签者的预测不进计量（去掉守卫即变红）", async () => {
+      const scores = await scoreQuestion(Resolution.YES, settledByOther())
+
+      expect(Object.keys(scores)).toEqual(["A"])
+      const upsertedUserIds = jest
+        .mocked(prisma.questionScore.upsert)
+        .mock.calls.map(
+          ([arg]) => (arg as { create: { userId: string } }).create.userId,
+        )
+      expect(upsertedUserIds).toEqual(["A"])
+    })
+
+    it("带可核查来源 + 他人确认 ⇒ 计入（事实是谁确认都算）", async () => {
+      const scores = await scoreQuestion(
+        Resolution.YES,
+        settledByOther({ resolutionSource: "https://data.example.org/cpi" }),
+      )
+
+      expect(Object.keys(scores).sort()).toEqual(["A", "B"])
+    })
+
+    it("无来源 + 本人确认 ⇒ 计入（那是他自己的判断，没替别人签字）", async () => {
+      const scores = await scoreQuestion(
+        Resolution.YES,
+        settledByOther({ confirmedByUserId: "B" }),
+      )
+
+      // A 是确认者？不——这一次是 B 确认的，所以 A 悬空、B 计入。
+      expect(Object.keys(scores)).toEqual(["B"])
+    })
+
+    it("补录来源后重算 ⇒ 原本悬空的那条重新计入（§五：补录不是撤销结算）", async () => {
+      // 重算路径（rescoreResolvedQuestion）与直接结算走同一个计分入口，
+      // 所以这里只需把"补录后的那一行"交给它。
+      const scores = await scoreQuestion(
+        Resolution.YES,
+        settledByOther({ resolutionSource: "https://data.example.org/cpi" }),
+      )
+
+      expect(Object.keys(scores).sort()).toEqual(["A", "B"])
+    })
+  })
 })
 
 describe("scoreQuestionOptions", () => {
@@ -210,6 +281,10 @@ describe("scoreQuestionOptions", () => {
       resolvedAt: new Date(DAY),
       resolution,
       oracleKind: "PUBLIC_FACT",
+      // 同 `makeResolvedQuestion`：正常结算（带来源）⇒ 所有人都计入
+      resolved: true,
+      resolutionSource: "https://example.org/evidence",
+      confirmedByUserId: "author",
       forecasts: [] as Forecast[],
       options: [
         makeOption("o1", resolution, [

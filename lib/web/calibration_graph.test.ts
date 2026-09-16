@@ -60,6 +60,12 @@ function binaryQuestion(
     id: "q1",
     type: QuestionType.BINARY,
     resolution,
+    // ADR-0031 §六：这组 fixture 关心的是查询条件与同分钟去重，不是结算范围。
+    // 给一条可核查来源，让范围规则对所有押过注的人生效（否则一个样本都不计入，
+    // 而这些用例会以「过滤把数据抹掉了」的形式失败——那不是它们要测的东西）。
+    resolved: true,
+    resolutionSource: "https://example.org/evidence",
+    confirmedByUserId: "author",
     forecasts,
     options: [],
   }

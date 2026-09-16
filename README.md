@@ -124,18 +124,32 @@ Where to look when something looks wrong:
 ### Quality gates
 
 - Jest unit tests covering scoring, calibration-sample filtering, resolution
-  (including the endorsement-triggered rescore), revision planning, decision
-  rubric/version rules, credential→identity dispatch, LLM parsing, CLI argument
-  parsing, and form behavior. Per-file `coverageThreshold` entries in
-  `jest.config.ts` gate the logic-dense modules and the calibration endpoint.
+  (including the endorsement-triggered rescore), the settlement-scope rule
+  (ADR-0031 §六: a sourceless settlement confirmed by someone else leaves the
+  other forecaster's sample dangling), domain naming/dedup and the domain
+  readout, revision planning, decision rubric/version rules, credential→identity
+  dispatch, LLM parsing, CLI argument parsing, and form behavior. Per-file
+  `coverageThreshold` entries in `jest.config.ts` gate the logic-dense modules
+  (including `domain_stats` / `domain_tags` / `settlement_scope` / `tags_router`)
+  and the calibration endpoint.
 - `cli/parity.test.ts` reads both interaction surfaces from source and fails when
   a procedure is reachable on only one of them without a registered reason
-  (AGENTS.md §10 / ADR-0023).
-- Playwright end-to-end tests: the human sign-in → create → resolve journey, and
-  the agent CLI → web endorse / proposal-confirm journey. Plus the database-level
-  `SetNull` regression on a real Postgres.
-- CI runs lint + typecheck + `test:coverage` + e2e + `next build` on every pull
-  request, and uploads the coverage and Playwright reports as artifacts.
+  (AGENTS.md §10 / ADR-0023). `lib/skills_contract.test.ts` does the same for the
+  agent skills: every `agent -- <command>` in a skill must exist in the CLI, and
+  every write example must declare its provenance.
+- `scripts/verify-migration-upgrade.ts` upgrades a **database that already has
+  data** (pre-upgrade migrations + old-schema rows, then `migrate deploy`) and
+  asserts the two backfills this phase added — `Tag.nameNormalized = lower(name)`
+  and `Question.confirmedByUserId = author` — plus the loud failure when the new
+  case-insensitive tag key would collide. A `migrate deploy` against an empty
+  database cannot catch any of that. Runs in CI's e2e job.
+- Playwright end-to-end tests: the human sign-in → create → resolve journey, the
+  agent CLI → web endorse / proposal-confirm journey, the decision-domain →
+  prediction → domain-readout loop, and the dangling → record-source → rescore
+  loop. Plus the database-level `SetNull` regression on a real Postgres.
+- CI runs lint + typecheck + `test:coverage` + migration-upgrade verification +
+  e2e + `next build` on every pull request, and uploads the coverage and
+  Playwright reports as artifacts.
 
 > **Required status checks:** the gate only blocks a merge if `Test / unit` and
 > `Test / e2e` are configured as required status checks in the repository's
@@ -181,26 +195,63 @@ reinterpretation of what you "meant" cannot leak into settlement.
 See [`docs/roadmap.md`](./docs/roadmap.md) for the phased plan and the open
 design decisions.
 
-## Quick start (Docker)
+## Quick start — one command
 
 ```shell
-cp .env.example .env
-docker compose up
+./startup.sh          # or: npm run startup
 ```
 
-The app is available at <http://localhost:3000>. The database is created and
-migrations run automatically on startup.
+It checks Docker/Node, creates `.env`, starts Postgres and Mailpit, installs dependencies, runs
+migrations, **prepares an identity** (no email needed — ADR-0022), installs the agent skill into
+`.agents/skills/`, then prints what to do next. Safe to re-run.
 
-**Signing in:** use the email magic-link option. Docker Compose includes
-[Mailpit](https://mailpit.axllent.org/) as a local mail catcher — open
-<http://localhost:8025> to read the sign-in email. No SMTP account needed.
+Then either:
+
+- **Open the web UI:**
+
+  ```shell
+  npm run dev:e2e      # plain http on :3000
+  ```
+
+  Open <http://localhost:3000> and sign in with the email magic link — the mail lands in Mailpit
+  at <http://localhost:8025>. No SMTP account needed.
+
+- **Talk to the agent in pi** (run it with this repo as the working directory):
+
+  ```shell
+  pi --skill .agents/skills/decision-capture/SKILL.md
+  ```
+
+  Then just talk: _"I'm torn about whether to take this offer."_
+
+Or run the whole app in Docker instead: `cp .env.example .env && docker compose up` (the database
+is created and migrations run automatically on startup).
+
+### Where the skills live
+
+`skills/decision-capture/` is the **source** — visible, harness-agnostic, laid out per the
+[Agent Skills specification](https://agentskills.io/specification) (one directory with a
+`SKILL.md`). `startup.sh` **installs** it into `.agents/skills/`, the shared `.agents/`
+convention that pi also reads as a project-level skill root (see `dist/core/trust-manager.js`
+in the pi package). That install directory is generated and gitignored — edit the source, not
+the copy.
+
+> pi only loads project-level skills **after the project is trusted** (true for both `.pi/skills/`
+> and `.agents/skills/`). It asks once on first start; otherwise pass `--skill` explicitly.
+
+### Try it end to end
+
+Six scenes, from recording a decision to reviewing it, each with what you should observe:
+**[docs/uat-pi-agent.md](docs/uat-pi-agent.md)**.
 
 ## Development
 
 ```shell
 npm install
 npx prisma generate --no-hints
-npm run dev          # dev server (port 3005, SSL proxy → 3000)
+npm run dev          # https://localhost:3000, via an SSL proxy on 3005
+                     #   needs localhost.pem / localhost-key.pem — this repo does not ship them
+npm run dev:e2e      # plain http on :3000 — use this when you don't have those certs
 npm test             # Jest unit tests
 npm run test:coverage
 npm run lint         # ESLint

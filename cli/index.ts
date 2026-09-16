@@ -67,6 +67,7 @@ async function main(): Promise<void> {
   const result = await command.run(args, {
     agent: session.agent,
     decision: session.decision,
+    tags: session.tags,
     userId: session.userId,
     email: session.email,
     credentialSource: session.credentialSource,

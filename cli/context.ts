@@ -27,6 +27,7 @@ export type CredentialSource =
 export type AgentSession = {
   agent: ReturnType<typeof appRouter.createCaller>["agent"]
   decision: ReturnType<typeof appRouter.createCaller>["decision"]
+  tags: ReturnType<typeof appRouter.createCaller>["tags"]
   userId: string
   email: string
   credentialSource: CredentialSource
@@ -60,6 +61,7 @@ export async function createAgentSession(
     return {
       agent: caller.agent,
       decision: caller.decision,
+      tags: caller.tags,
       userId: user.id,
       email: user.email,
       credentialSource: flagKey ? "api-key-flag" : "api-key-env",
@@ -86,6 +88,7 @@ export async function createAgentSession(
   return {
     agent: caller.agent,
     decision: caller.decision,
+    tags: caller.tags,
     userId: user.id,
     email: user.email,
     credentialSource: "email-env",
@@ -98,8 +101,8 @@ export async function createAgentSession(
  */
 export function createAnonymousSession(): Pick<
   AgentSession,
-  "agent" | "decision"
+  "agent" | "decision" | "tags"
 > {
   const caller = callerFor(undefined)
-  return { agent: caller.agent, decision: caller.decision }
+  return { agent: caller.agent, decision: caller.decision, tags: caller.tags }
 }

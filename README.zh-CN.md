@@ -58,9 +58,11 @@ npm run --silent agent -- report-delivery --notification-id <id> --outcome DELIV
 
 ### 质量门禁
 
-- Jest 单元测试：计分（含"非公共事实类不进相对分"）、校准样本过滤、结算状态机、修订规划与理由校验、LLM 解析、CLI 参数解析、表单行为。
-- Playwright 端到端测试：人登录 → 创建 → 结算，以及 agent 经 CLI 写入 → 人在 Web 背书 / 确认提案。
-- CI 在每次 PR 上运行 lint + typecheck + 单元测试（带覆盖率阈值）+ e2e。
+- Jest 单元测试：计分（含"非公共事实类不进相对分"）、校准样本过滤、结算生效范围（ADR-0031 §六：无来源且由他人确认的结算，对被代签者是悬空样本）、领域命名与判重、领域读数、结算状态机、修订规划与理由校验、LLM 解析、CLI 参数解析、表单行为。逻辑最密的几支在 `jest.config.ts` 里有逐文件覆盖率下限（含 `domain_stats` / `domain_tags` / `settlement_scope` / `tags_router`）。
+- `cli/parity.test.ts` 从源码读出两个交互面，某过程只在一侧可达且未登记理由时变红（AGENTS.md §10 / ADR-0023）；`lib/skills_contract.test.ts` 对技能做同样的事：技能里每条 `agent -- <命令>` 必须真实存在，写入示例必须声明来源。
+- `scripts/verify-migration-upgrade.ts` 升级一个**已有数据**的库（先应用升级前的迁移并插入旧数据，再 `migrate deploy`），断言本阶段两条回填（`Tag.nameNormalized = lower(name)`、`Question.confirmedByUserId = 作者`）以及大小写冲突时**大声失败**——这些都是空库上的 `migrate deploy` 抓不到的。
+- Playwright 端到端测试：人登录 → 创建 → 结算；agent 经 CLI 写入 → 人在 Web 背书 / 确认提案；决策领域 → 预测 → 领域读数；悬空 → 补录来源 → 重算计入。另有真 Postgres 上的 `SetNull` 回归。
+- CI 在每次 PR 上运行 lint + typecheck + 单元测试（带覆盖率阈值）+ 迁移升级验证 + e2e + 生产构建。
 
 ## 愿景：Agent 原生的决策卫生
 
@@ -85,22 +87,62 @@ npm run --silent agent -- report-delivery --notification-id <id> --outcome DELIV
 
 阶段计划与待定设计决策见 [`docs/roadmap.md`](./docs/roadmap.md)。
 
-## 快速开始（Docker）
+## 快速开始——一条命令
 
 ```shell
-cp .env.example .env
-docker compose up
+./startup.sh          # 或：npm run startup
 ```
 
-应用地址 <http://localhost:3000>。数据库自动创建，迁移在启动时执行。
+它会检查 Docker/Node、生成 `.env`、起 Postgres 与 Mailpit、装依赖、跑迁移、**准备一个身份**
+（不需要邮箱，ADR-0022）、把 agent 技能安装到 `.agents/skills/`，然后打印下一步。可重复执行。
 
-**登录：** 使用 email magic link。Docker Compose 内置 [Mailpit](https://mailpit.axllent.org/) 作为本地邮件捕获器——打开 <http://localhost:8025> 查看登录邮件，无需 SMTP 账号。
+接下来二选一：
+
+- **打开 Web 页面：**
+
+  ```shell
+  npm run dev:e2e      # 明文 http，端口 3000
+  ```
+
+  浏览器打开 <http://localhost:3000>，用邮箱 magic link 登录——邮件在 Mailpit 里看：
+  <http://localhost:8025>。不需要 SMTP 账号。
+
+- **在 pi 里与 agent 对话**（把本仓库作为工作目录启动 pi）：
+
+  ```shell
+  pi --skill .agents/skills/decision-capture/SKILL.md
+  ```
+
+  然后说人话就行：_“我在纠结要不要接这个 offer。”_
+
+也可以整套跑在 Docker 里：`cp .env.example .env && docker compose up`（数据库自动创建，
+迁移在启动时执行）。
+
+### 技能放在哪里
+
+`skills/decision-capture/` 是**源**——可见、与具体 harness 无关，按
+[Agent Skills 规范](https://agentskills.io/specification)组织（一个目录 + `SKILL.md`）。
+`startup.sh` 把它**安装**到 `.agents/skills/`：`.agents/` 是跨 harness 的共享约定，pi 也把它
+当作项目级技能根（见 pi 安装包里的 `dist/core/trust-manager.js`）。安装目录是生成物，已在
+`.gitignore` 里——要改就改源，不要改那一份拷贝。
+
+> pi 只在**项目被信任**之后才加载项目级技能（`.pi/skills/` 与 `.agents/skills/` 都受此约束）。
+> 首次启动它会问一次；不想信任就显式传 `--skill`。
+
+### 端到端试一遍
+
+六个场景，从记录一条决策到复盘，每一步都写了该看到什么：
+**[docs/uat-pi-agent.md](docs/uat-pi-agent.md)**。
 
 ## 开发
 
 ```shell
 npm install
 npx prisma generate --no-hints
+npm run dev          # https://localhost:3000，经 3005 的 SSL 代理
+                     #   需要 localhost.pem / localhost-key.pem——本仓库不提供
+npm run dev:e2e      # 明文 http，端口 3000——没有那两个证书时用这个
+npm test             # Jest 单元测试
 npm run dev          # 开发服务器（3005，SSL 代理 → 3000）
 npm test             # Jest 单元测试
 npm run test:coverage

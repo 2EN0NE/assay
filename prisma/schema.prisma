@@ -32,6 +32,11 @@ model Forecast {
   provenance RecordProvenance @default(HUMAN)
   endorsed   Boolean          @default(true)
   endorsedAt DateTime?
+  // 审计线索（ADR-0027）：只存标识，不存会话正文。发起方类别与声明分开存——
+  // "agent 发起的调用"与"这个数字是当事人给的"是两件事，合在一就会丢掉可对质的
+  // 能力：恰恰是“来自会话却自称数字由当事人给出”这类记录最需要被筛出来。
+  initiator      InitiatorKind @default(HUMAN)
+  agentSessionId String?
   optionId   String?
   option     QuestionOption?  @relation(fields: [optionId], references: [id], onDelete: Cascade)
   userId     String
@@ -110,11 +115,18 @@ model Question {
   // 结算证据（ADR-0004）：自行结算与提案被采纳时写入，使「可核查来源」可结构化检索
   resolutionSource             String?
   resolutionRationale          String?
+  // 谁确认的这次结算（ADR-0031 §三）。生效范围的判据依赖它：没有可核查来源时，
+  // 只有确认者本人的 Forecast 计入计量（§六）。只存标识、不建外键——与
+  // `agentSessionId` 同为审计标识，而不是参与业务读取的关系。
+  confirmedByUserId            String?
   revisions                    Revision[]
   proposals                    ResolutionProposal[]
   // ADR-0019：Prediction 归属 Decision，至多一个；删容器不删预测（SetNull）
   decisionId                   String?
   decision                     Decision?                @relation(fields: [decisionId], references: [id], onDelete: SetNull)
+  // 审计线索（ADR-0027）：发起方类别 + 会话标识，只存标识不存正文
+  initiator                    InitiatorKind            @default(HUMAN)
+  agentSessionId               String?
 
   @@index([decisionId])
 }
@@ -122,12 +134,17 @@ model Question {
 model Tag {
   id        String     @id @default(cuid())
   createdAt DateTime   @default(now())
-  name      String
-  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  questions Question[]
-  userId    String
+  // 显示保留用户写下的原样（`投资/宏观/CPI`），但**判重折叠大小写**：
+  // 库里原本是 `@@unique([name, userId])`（大小写敏感），`CPI` 与 `cpi` 会裂成两个桶，
+  // 而这类错误是静默的（Obsidian 也把二者当同一个标签）。
+  name           String
+  nameNormalized String
+  user           User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  questions      Question[]
+  decisions      Decision[]
+  userId         String
 
-  @@unique([name, userId])
+  @@unique([nameNormalized, userId])
 }
 
 model ResolutionSlackMessage {
@@ -269,6 +286,16 @@ enum RecordProvenance {
   HUMAN
   AGENT
   AGENT_INSTRUCTED
+}
+
+/// 发起方类别（ADR-0027）：这次调用来自身边的人，还是 agent 代跑。
+///
+/// 与 `RecordProvenance` 是两件事，分开存：数字可能是 agent 发起的会话里由当事人
+/// 亲口给的（`initiator = AGENT` + `provenance = HUMAN`）——那不是缺陷，但它必须
+/// 可以被筛出来复查，否则 ADR-0024 的默认方向就只是一次不可核查的自我申报。
+enum InitiatorKind {
+  HUMAN
+  AGENT
 }
 
 // 待触达状态机
@@ -447,6 +474,9 @@ model Decision {
   rubricRecordedAfterOutcomeAt DateTime?
   questions       Question[]
   rubricEntries   DecisionRubricEntry[]
+  // 领域权威在 Decision（ADR-0030）：用户在这里表达一次"这条决策属于哪个领域"，
+  // 挂接预测时写时复制为其 Question 的标签，且事后不跟随。
+  tags            Tag[]
   // 叙事字段的改写留痕（ADR-0012）：旧值 / 新值 / 时间 / 理由
   revisions       Revision[]
 

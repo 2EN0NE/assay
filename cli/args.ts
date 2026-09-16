@@ -165,3 +165,43 @@ export function emitJson(data: unknown): void {
     emittingJson = false
   }
 }
+
+/**
+ * 调用上下文是不是"agent 在代跑"（ADR-0024）。
+ *
+ * 标记由 agent 运行时注入子进程环境（pi 设 `AI_AGENT` 与 `PI_CODING_AGENT`），
+ * 子进程继承。它只决定来源的**默认方向**，不构成权威——权威是命令里的显式声明
+ * （`--stated-by-owner` / `--agent-collected`）。脚本与 cron 不设标记，因此默认按
+ * "人在终端里敲"处理。
+ *
+ * 刻意不做更聪明的推断（例如"stdin 不是 tty 就当成 agent"）：推断错的方向恰好是
+ * "把 agent 的数字当成当事人的"，而那正是这道判据要防的事。
+ */
+export function invokedByAgent(
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  return Boolean(env.AI_AGENT || env.PI_CODING_AGENT)
+}
+
+/** 审计线索（ADR-0027）：发起方类别 + 会话标识。 */
+export type AuditContext = {
+  initiator: "HUMAN" | "AGENT"
+  agentSessionId?: string
+}
+
+/**
+ * 取本次调用的审计线索。**只取标识，绝不取会话正文**——正文在 pi 的会话文件里
+ * （`PI_SESSION_FILE`），一旦复制进库，容量、隐私与清理责任会一起进来，而审计
+ * 只需要能定位到那个会话。
+ *
+ * 它存在的理由：让"这条记录自称是人给的"事后**可对质**。没有它，ADR-0024 的
+ * 默认方向就只是一次不可复查的自我申报。
+ */
+export function auditContext(
+  env: Record<string, string | undefined> = process.env,
+): AuditContext {
+  return {
+    initiator: invokedByAgent(env) ? "AGENT" : "HUMAN",
+    agentSessionId: env.PI_SESSION_ID,
+  }
+}

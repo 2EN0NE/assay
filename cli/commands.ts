@@ -1,8 +1,10 @@
 import type { appRouter } from "../lib/web/app_router"
 import {
   Args,
+  auditContext,
   CliError,
   hasFlag,
+  invokedByAgent,
   optionalNumber,
   optionalProbability,
   optionalString,
@@ -20,10 +22,12 @@ import type { CredentialSource } from "./context"
  */
 export type AgentApi = ReturnType<typeof appRouter.createCaller>["agent"]
 export type DecisionApi = ReturnType<typeof appRouter.createCaller>["decision"]
+export type TagsApi = ReturnType<typeof appRouter.createCaller>["tags"]
 
 export type CommandContext = {
   agent: AgentApi
   decision: DecisionApi
+  tags: TagsApi
   userId: string
   email: string
   credentialSource: CredentialSource
@@ -83,10 +87,25 @@ function parseRubricEntries(
   return [...done, ...notDone]
 }
 
+/**
+ * `--tags a,b` → 领域名数组（ADR-0030）。
+ *
+ * 旗标名沿用 ADR-0030 §七 的说法（它讲的就是"`--tags` 里出现库里没有的词"）。
+ * 只去掉外层空白，**不做任何其它清洗**：带空格、纯数字、空层级这些非法名字
+ * 由服务端的领域规则拒绝。"帮你改成差不多的名字"正是这条 ADR 要防的事。
+ */
+function parseDomains(args: Args): string[] {
+  return (optionalString(args, "tags") ?? "")
+    .split(",")
+    .map((name) => name.trim())
+    .filter((name) => name !== "")
+}
+
 export const commands: Command[] = [
   {
     name: "list-due",
-    summary: "列出已到期且未结算的预测（跟踪调用的主输入）",
+    summary:
+      "到期队列：可结算 / 悬空未结算两栏 + 未标领域计数（跟踪调用的主输入）",
     usage: "list-due [--limit N] [--now <ISO>]",
     run: (args, { agent }) =>
       agent.listDue({
@@ -108,7 +127,7 @@ export const commands: Command[] = [
     name: "create-prediction",
     summary: "创建一条预测（可不给概率 = 尚未量化）",
     usage:
-      "create-prediction --title T --resolve-by <ISO> --criteria C [--oracle-kind K] [--anchor A] [--probability P] [--note N] [--decision-id ID] [--agent-collected]",
+      "create-prediction --title T --resolve-by <ISO> --criteria C [--oracle-kind K] [--anchor A] [--probability P] [--note N] [--decision-id ID] [--stated-by-owner | --agent-collected]",
     run: (args, { agent }) => {
       const oracleKind =
         oneOf(
@@ -116,6 +135,24 @@ export const commands: Command[] = [
           ORACLE_KINDS,
           "oracle-kind",
         ) ?? "PUBLIC_FACT"
+      // ADR-0024：来源的**默认方向按调用上下文**——agent 代跑时默认“待背书”
+      // （数字可能是它自己取得的），人自己在终端里敲时默认“数字由当事人给出”、
+      // 天然已背书。两个 flag 是显式声明，永远是权威；同时给出则拒绝，
+      // 因为那说明调用方自己没想清楚这个数字是谁说的。
+      const saysOwner = hasFlag(args, "stated-by-owner")
+      const saysAgent = hasFlag(args, "agent-collected")
+      if (saysOwner && saysAgent) {
+        throw new CliError(
+          "--stated-by-owner 与 --agent-collected 互斥：这个数字只可能有一个来源",
+        )
+      }
+      let statedByOwner = !invokedByAgent()
+      if (saysOwner) {
+        statedByOwner = true
+      }
+      if (saysAgent) {
+        statedByOwner = false
+      }
       return agent.createPrediction({
         title: requireString(args, "title"),
         resolveBy: requireDate(args, "resolve-by"),
@@ -127,10 +164,10 @@ export const commands: Command[] = [
         // 过程层支持"创建时就归属决策"（ADR-0019），CLI 这一层必须同样暴露——
         // 否则 Agent 走 CLI 只能"先建后挂"，而未知 flag 会被静默忽略。
         decisionId: optionalString(args, "decision-id"),
-        // ADR-0008：--agent-collected 表示这个数字是 Agent **自己取得**的，
-        // 不是当事人说的；因此默认未背书，须经当事人背书才计入校准。
-        // 不给这个 flag（默认）即「数字由当事人给出」——天然已背书。
-        agentCollected: hasFlag(args, "agent-collected"),
+        statedByOwner,
+        // 审计线索（ADR-0027）：发起方类别与会话标识分开存，"来自会话却自称数字
+        // 由当事人给出"才能被筛出来对质。
+        ...auditContext(),
       })
     },
   },
@@ -152,6 +189,17 @@ export const commands: Command[] = [
     summary: "列出未背书的预测值",
     usage: "list-unendorsed",
     run: (_args, { agent }) => agent.listUnendorsed(),
+  },
+  {
+    name: "list-audit-records",
+    summary: "列出记录及其调用上下文（ADR-0027），用于对质来源声明",
+    usage:
+      "list-audit-records [--only-owner-claims] [--limit N]\n  --only-owner-claims：只看“来自 agent 会话、却声明数字由当事人给出”的那些",
+    run: (args, { agent }) =>
+      agent.listAuditRecords({
+        onlyAgentSessionOwnerClaims: hasFlag(args, "only-owner-claims"),
+        limit: optionalNumber(args, "limit") ?? 50,
+      }),
   },
   {
     name: "list-revisions",
@@ -235,7 +283,7 @@ export const commands: Command[] = [
     name: "create-decision",
     summary: "创建一个决策：承载决策时点的推理过程（ADR-0001 / 0019）",
     usage:
-      "create-decision --statement <陈述> [--reasoning <理由>] [--expected-outcome <预期>] [--known-info <当时已知>] [--unknown-info <当时未知>]",
+      "create-decision --statement <陈述> [--reasoning <理由>] [--expected-outcome <预期>] [--known-info <当时已知>] [--unknown-info <当时未知>] [--tags 投资/宏观,投资/公司业绩-Q3]",
     run: (args, { decision }) =>
       decision.create({
         statement: requireString(args, "statement"),
@@ -243,6 +291,7 @@ export const commands: Command[] = [
         expectedOutcome: optionalString(args, "expected-outcome"),
         knownInfo: optionalString(args, "known-info"),
         unknownInfo: optionalString(args, "unknown-info"),
+        domains: parseDomains(args),
       }),
   },
   {
@@ -305,6 +354,79 @@ export const commands: Command[] = [
     usage: "list-decisions [--limit N]",
     run: (args, { decision }) =>
       decision.list({ limit: optionalNumber(args, "limit") }),
+  },
+  {
+    name: "add-domain",
+    summary:
+      "新增一个领域词（幂等。这是唯一的造词入口——未知领域不会被静默创建，ADR-0030 §七）",
+    usage: "add-domain --name <领域名>",
+    run: (args, { tags }) =>
+      tags.addDomain({ name: requireString(args, "name") }),
+  },
+  {
+    name: "list-domains",
+    summary: "列出领域词表与各自引用数（补齐未标的依据）",
+    usage: "list-domains",
+    run: (_args, { tags }) => tags.listDomains(),
+  },
+  {
+    name: "domain-report",
+    summary:
+      "领域读数（ADR-0032/0033）：样本数、悬空计数、校准、分辨率、技能分与区间；N<5 只给前两项，5≤N<20 加校准与分辨率，N≥20 才给技能分与区间",
+    usage: "domain-report --prefix 投资/宏观",
+    run: (args, { tags }) =>
+      tags.domainReport({ prefix: requireString(args, "prefix") }),
+  },
+  {
+    name: "retag-decision",
+    summary:
+      "改一条决策的领域：补齐（原先没领域）自由，重标（改已标过的）必须带 --reason（ADR-0030 §三）",
+    usage: "retag-decision --decision-id ID --tags a,b [--reason REASON]",
+    run: (args, { tags }) =>
+      tags.setDecisionDomains({
+        decisionId: requireString(args, "decision-id"),
+        domains: parseDomains(args),
+        reason: optionalString(args, "reason"),
+      }),
+  },
+  {
+    name: "list-untagged-decisions",
+    summary: "列出尚无领域的决策（新→旧，供补齐时选择）",
+    usage: "list-untagged-decisions [--limit N]",
+    run: (args, { tags }) =>
+      tags.listUntaggedDecisions({ limit: optionalNumber(args, "limit") }),
+  },
+  {
+    name: "rename-domain",
+    summary: "改领域名（必须给 --reason 留痕），并报出受影响的决策数与预测数",
+    usage: "rename-domain --from <旧名> --to <新名> --reason <理由>",
+    run: (args, { tags }) =>
+      tags.renameDomain({
+        from: requireString(args, "from"),
+        to: requireString(args, "to"),
+        reason: requireString(args, "reason"),
+      }),
+  },
+  {
+    name: "delete-domain",
+    summary: "删除一个零引用的领域词（有引用即拒绝：删已引用的等于改写历史）",
+    usage: "delete-domain --name <领域名>",
+    run: (args, { tags }) =>
+      tags.deleteDomain({ name: requireString(args, "name") }),
+  },
+  {
+    name: "record-resolution-source",
+    summary:
+      "给一条**已结算但悬空**的题补录可核查来源，使该题所有预测计入（ADR-0031 §五）",
+    usage:
+      "record-resolution-source --question-id ID --source <来源> [--rationale 理由] [--reason 改口径的理由]",
+    run: (args, { agent }) =>
+      agent.recordResolutionSource({
+        questionId: requireString(args, "question-id"),
+        source: requireString(args, "source"),
+        rationale: optionalString(args, "rationale"),
+        reason: optionalString(args, "reason"),
+      }),
   },
   {
     name: "whoami",

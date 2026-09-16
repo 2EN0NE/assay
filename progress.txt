@@ -224,3 +224,200 @@
 - e2e 已能跑绿（**8 passed**）：端口 3000 上那个遗留的 `next dev`（PID 372/373）经作者授权停掉，`dev:e2e` 补上 http 的 `NEXTAUTH_URL`/`HOST_URL` 后全部通过。
 - **已知 flake（未修）**：整套跑时 `修订历史` 用例超时一次——上一步的 HeadlessUI portal 残留并拦截点击；单跑该用例通过。
 - 审计结论里属于"改文档"的那批（ADR-0002 排名口径、0012 例外永不关闭、0006 保证无承担者、0007 人在环写入口、0014 枚举、0017 队列含历史行…）还没落笔，等作者裁决口径后再改。
+
+## Session: 2026-03-10（决策回路实现，第 1 段）
+
+### Completed
+- 旧票据 04（来源默认极性）已实现并真库验收：
+  - `cli/args.ts` 新增 `invokedByAgent()`（读 `AI_AGENT` / `PI_CODING_AGENT`）
+  - `cli/commands.ts` 的 `create-prediction`：默认按调用上下文，`--stated-by-owner` / `--agent-collected` 显式声明，两者互斥
+  - `agent.createPrediction` 的 `statedByOwner` 改为**必填**（路由层不给默认值）
+  - skill 与 CLI 帮助文本同步；`AGENTS.md` / `docs/roadmap.md` 的来源段落同步
+  - e2e 里 5 处依赖默认值的用例补了 `--stated-by-owner`（避免 e2e 结果取决于跑测试的进程是否 agent）
+- 单测 233 passed；`npm run typecheck` 干净。
+
+### Key Decisions
+- 路由层不给来源默认值（必填）：猜错的方向是"把 agent 的数字当成当事人的"，且不报错。
+- `--agent-collected` 保留为显式反向声明，不删——否则"我是当事人但数字来自 agent"这个真实情形没有表达方式。
+
+### Next Steps
+- 旧 05（审计元数据）、06（锚定保护）、07（结算授权）→ 新 01（领域标签）、02（结算范围）、03（领域读数）、04（跟踪回路）、05（skill 契约）、06（UAT 收尾）
+
+## Session: 2026-03-10（决策回路实现，第 2 段）
+
+### Completed
+- 旧票据 05（审计元数据）：schema 加 `initiator` / `agentSessionId`（迁移只加列），`auditContext()`，`agent.listAuditRecords` + CLI `list-audit-records`，parity 例外带理由。真库验收：agent 会话 + `--stated-by-owner` ⇒ `initiator=AGENT` / `provenance=HUMAN` / `ownerClaimFromSession=true`。
+- 旧票据 06（锚定保护）：实现在 `lib/_utils_common.ts` 的 `forecastsAreHidden()`——CLI 与 Web 共用的模块。规则：未结算 + 多个不同预测者 + 我还没押 ⇒ 隐藏他人值。三条读路径（getQuestion / 题单 / v0 API）自动继承；Web 侧既有 UI 文案直接可用，无需改 UI。CLI 面把 `toPredictionView` 改为只取自己的 forecasts（之前取"全场最近一条"，会把他人的数字当成该题读数报给我）。
+- 单测 235 → 245 passed；tsc 干净。
+
+### Lessons Learned
+- **LSP 的 TS 程序会缓存 `prisma generate` 之前的类型**，改 schema 后会持续报"字段不存在"的假阳性。硬证据链：磁盘 `node_modules/.prisma/client/index.d.ts` 的 `QuestionCreateInput`/`ForecastCreateInput` 已含新字段 + `tsc --noEmit` 干净 + 真库写入成功。处置：按假阳性登记；重开编辑器/语言服务器可清除。仓库 AGENTS.md 早有「权威判据是 tsc，不是语言服务器」。
+- 共享谓词放在 CLI/Web 共用模块（`_utils_common.ts`），比在两面各写一份强——Web 的 UI 文案、CLI 的读数、通知链路一次性全部对齐，且"一面有另一面没有"在结构上不可能出现。
+
+### Next Steps
+- 旧 07（结算授权按 Forecast 的 Owner）→ 新 01…06（领域标签 / 结算范围 / 领域读数 / 跟踪回路 / skill 契约 / UAT 收尾）
+
+## Session: 2026-03-10（决策回路实现，第 3 段）
+
+### Completed
+- 旧票据 07（结算授权按 Forecast 的 Owner）：授权矩阵落成纯函数 `lib/web/settlement_authority.ts::decideSettlement()`；`agent.settle` 不再按题主断言（`assertOwnedQuestion` 因此成孤儿并被删除）；要求本人报告时提醒发给**预测的 Owner** 而非调用方；`decideProposal` 确认权改为"题主或预测的 Owner"并给 FORBIDDEN 原因；`listProposals` 同步放宽。
+- 旧票据 04/05/06/07 **全部完成** ⇒ 新票据 01–06 的前置已齐。
+- 全量单测 227 → **254 passed**；tsc 干净。
+
+### Verified facts（后续票据可直接依赖）
+- `lib/web/resolution.ts:43-44` **确实**写入 `resolutionSource` / `resolutionRationale` ⇒ ADR-0031 的判据（"有可核查来源"）在库里可判断，新票据 02 无需先补落库。
+- `API_KEY_LENGTH` 的 knip "unused export" 是假阳性：`cli/init.test.ts`、`lib/api_key.test.ts`、`e2e/agent-cli.spec.ts` 三处导入它。
+
+### Lessons Learned
+- **LSP 缓存 Prisma 生成类型的解法**：`touch` 文件（只改 mtime）**无效**；往 `node_modules/.prisma/client/index.d.ts` **追加一行内容**（真改内容）才逼它重读，假阳性随即全部消失。改了 schema 之后若 LSP 仍报"字段不存在"，先查 `tsc`，再用这个办法刷新。
+- 上游 fatebook 已有 `hideForecastsUntilPrediction` 与 `scrubHiddenForecastsAndSensitiveDetailsFromQuestion`——新规则尽量复用既有接缝（一个共享谓词），两面一次性对齐，比各写一份可靠得多。
+
+### Next Steps
+- 新票据 01（领域标签：Decision 权威 + 写时复制 + CRUD + Web 最小入口 + parity 门禁扩展）→ 02（结算生效范围）→ 03（领域读数）→ 04（跟踪回路）→ 05（skill 契约）→ 06（UAT 收尾）
+
+## Session: 2026-03-10（决策回路实现，第 4 段：新票据 01 进行中）
+
+### Completed（新 01 的后端核心）
+- schema：`Decision.tags Tag[]` + `Tag.nameNormalized` + 唯一键改为 `@@unique([nameNormalized, userId])`；迁移 `20260914180000_decision_domain_tags`。
+- `lib/web/domain_tags.ts`：`normalizeDomainName` / `assertValidDomainName`（Obsidian 规则）/ `resolveExistingDomains`（未知领域大声失败 + 指引）/ `propagateDecisionDomainsToQuestion` / `propagateDecisionDomains`。
+- `lib/web/tags_router.ts`：新增 `listDomains` / `addDomain`（幂等，唯一造词入口）/ `renameDomain`（带理由 + 留痕 + 报出影响面）/ `deleteDomain`（只允许零引用）/ `listUntaggedDecisions` / `setDecisionDomains`（补齐 ≠ 重标：已标过必须给理由）。
+- `lib/web/decision_router.ts`：`create` 接受 `domains`（未知即失败）；`byId` 带出 tags；`attachPrediction` 写时复制到该预测。
+- **改动的爆炸半径已清**：4 处造标签的地方（`tags_router` / `question_router` / `import_router` / `pages/api/v0/createQuestion`）都补了 `nameNormalized` 并换用新唯一键。
+- tsc 干净；全量 254 passed。
+
+### Lessons Learned（两个真错误，都值得记）
+- **`ADD COLUMN ... NOT NULL` 在空表上会"看起来成功"**：Prisma 生成的就是这句，本机 Tag 表恰好为空所以通过，但任何已有标签的库都会失败（或更糟：带默认值时静默改写全部历史）。手改成"加可空列 → 回填 → 置 NOT NULL"。
+- **`Prisma.XxxCreateInput` 与 `Prisma.XxxUncheckedCreateInput` 不是同一个东西**：原代码用 `userId` 标量时推断的是 unchecked 变体；我加注解时选了 checked 变体，于是"纯新增一个字段"变成了"改形状"并弄红一个测试。加注解要选对变体。
+- LSP 陈旧快照会在每次 `prisma generate` 后复发，或在我编辑相关文件后复发。处置固定为：看 `tsc` → 往 `node_modules/.prisma/client/index.d.ts` **追加一行内容** → 重扫。
+
+### Next Steps（新 01 收尾）
+- 领域相关单测（纯函数 + 传播自证 + 取名/删除的拒绝用例）
+- CLI：`add-domain` / `list-domains` / `retag-decision` / `list-untagged-decisions` + `create-decision --domains` + `show-decision` 带出领域
+- Web：决策详情页显示/编辑领域（对等要求）
+- parity 门禁扩展到 `tags` router
+
+## Session: 2026-03-10（新 01 完成）
+
+### Completed（新 01 — 领域标签：Decision 权威 + 写时复制）
+- schema/迁移 20260914180000：`Decision.tags`、`Tag.nameNormalized`、唯一键 `@@unique([nameNormalized, userId])`
+- `lib/web/domain_tags.ts`：规范化/校验、`resolveExistingDomains`（未知即失败 + 词表指引）、两个写时复制函数
+- `tags_router`：listDomains / addDomain / renameDomain / deleteDomain / listUntaggedDecisions / setDecisionDomains
+- `decision_router`：create 收 `--tags`、byId 带 tags、attachPrediction 写时复制
+- CLI 六条：add-domain / list-domains / retag-decision / list-untagged-decisions / rename-domain / delete-domain + create-decision --tags
+- Web：决策详情页领域段（含未知词的显式“新建领域”按钮）、/decisions 首页列出未标领域的决策
+- parity 门禁并入 `tagsRouter`（例外表 +5，各带理由）
+- skill 源 `skills/decision-capture/SKILL.md` 增“决策级：领域”一节（含"造词前必须先问用户"），并同步安装副本
+- 验证：tsc 干净 / lint 干净 / **272 passed**（领域名守卫 7、传播自证 4、CLI 翻译 5）
+
+### 抓到的三个真错误
+- **迁移**：Prisma 生成的 `ADD COLUMN ... NOT NULL` 在空表上"看起来成功"；手改为"加可空列 → 回填 → 置 NOT NULL"。
+- **类型注解**：`Prisma.XxxCreateInput`（checked）与 `UncheckedCreateInput` 不是一回事；选错变体会把"加一个字段"变成"改形状"。
+- **语义（最重要）**：`setDecisionDomains` 原先对已挂预测无条件传播 → 违反 §四（事后改 Decision 不许改写已挂样本）。修法：`isRetag ? 0 : propagate(...)`，并补两条自证用例（去掉守卫即变红）。**教训：我自己写的注释（"显式改标时用"）是错的，去读 ADR 原文才发现。**
+
+### 未做（诚实标注在票据里）
+- 真库 e2e 冒烟（本机 Playwright 浏览器二进制不可用）
+- `rename-domain` / `delete-domain` 的单测
+
+### 环境问题（非代码，需人工处置）
+- pi-lens 的 TypeScript 语言服务器在本会话内**不刷新** Prisma 类型：它报告 `nameNormalized`/`Decision.tags` 等不存在，但磁盘只有一份类型（49 处 `nameNormalized`）、`tsc` 干净、272 测试通过；连 `lens_diagnostics mode=full`（主动重扫）也复现。已确认符号链解析正常。**需重启语言服务器**；我未为这些假阳性在源码里写忽略注释（那会误导后人）。
+
+### Next Steps
+- 新 02：结算生效范围（据 ADR 的 scope 语义）
+
+### 环境问题根因（补充）
+- `effective_config` 揭示：该 TS 文件上同时选中了 **deno** 语言服务器（pi-lens 里 deno 是 typescript 的 alternate）。Deno 不按 node_modules 解析 `@prisma/client`，于是报"Prisma 字段不存在"——这解释了为何反复刷新 `node_modules/.prisma` 无效。
+- 已加项目配置 `.pi-lens.json`（`{"disabledServers":["deno"]}`）；`effective_config` 确认 deno 变为 `disabled-by-config`。**但报错仍在** → 当前仍在报的那一份来自已启动的 typescript 服务器（其 program 陈旧），需重启语言服务器才会刷新。
+- 处置原则：不为假阳性在源码写忽略注释（会误导后人）；以 `tsc` / `lint` / `test` 为准。
+
+## Session: 2026-09-16（票据 02–06 实现 + 独立库 UAT）
+
+### Completed
+- **02 结算生效范围（ADR-0031）**：`Question.confirmedByUserId` + 迁移（**含回填**：旧模型下只有作者能结算，所以确认者=作者）；纯函数 `lib/web/settlement_scope.ts`（三态 UNRESOLVED/DANGLING/EFFECTIVE）；三条写入路径都记确认者；计量过滤落在 `resolution.ts` 的 `meteredForecasts` 与 `calibration_graph.ts`；`agent.recordResolutionSource` + CLI（§五 的出口，写来源后重算）；`listDue` 改 `{settleable, dangling}`。
+- **03 领域读数（ADR-0032/0033）**：`lib/web/domain_stats.ts`（纯统计 + mulberry32 固定种子 bootstrap）+ `lib/web/fixtures/domain_samples.ts`（4 领域、87 条、已知特征）；`tags.domainReport` + CLI `domain-report` + Web `/domains`。
+- **04 跟踪回路（ADR-0034）**：`skills/settlement-tracking/SKILL.md`；AGENTS.md 新增「跟踪回路」一节；startup.sh 改为循环安装全部技能；`listDue` 分栏自证用例。
+- **05 技能契约**：捕获技能先 `list-domains` + 改用初始词表；**修掉我自己写的假命令 `propose-resolution`**（不存在，提案是 `settle` 自动降级的）；新增 `lib/skills_contract.test.ts`（frontmatter / name 一致 / description / 技能引用的 CLI 命令真实存在 / 写入命令带来源声明）。
+- **06 UAT**：`docs/uat-pi-agent.md` 重写为四段 + 真实输出；独立库 `fatebook_uat` 上跑通全回路并灌入合成样本；`scripts/seed-uat-samples.ts`。
+- 验证：`tsc` 干净 / lint 干净 / **304 passed**（26 suites）。
+
+### Lessons Learned
+- **`prisma` 的 `directUrl`**：schema 里 `directUrl = env("DATABASE_DIRECT_URL")`，而**迁移走 directUrl**。只改 `DATABASE_URL` 时 `migrate deploy` 会报“无待应用迁移”并静默作用在开发库上。独立库 UAT 必须两个都改。
+- **内联抑制会损坏源码**：用 `lens_diagnostic_mark` 的 `suppress` 写 `pi-lens-ignore` 注释时，工具在 `decision_router.ts` 的 **EOF 追加了一个多余的 `)`**，导致 `tsx` 转换失败（CLI 直接起不来）。已回滚标记与垃圾。**在这套环境里不要用 suppress。**
+- **fixture 是判据的载体**：Brier 我最初写成“预测值对其均值的偏差”，fixture 里「全押基准率」那一组立刻把它变红——那份 fixture 存在的意义就是这个。
+- **写技能时最容易犯的是“写一条不存在的命令”**：我写跟踪技能时顺手写了 `propose-resolution`，而它不存在。已做成门禁。
+- 阈值类 AC 要看**内部自洽性**：ADR-0032 §四 两句并存时只有一种读法（n≥5 给桶、n≥20 给技能分），按自洽读法实现并写明理由。
+
+### 环境问题（需人工处置，非代码）
+- pi-lens 的 TypeScript 语言服务器在本会话内**始终持有一份陈旧的 Prisma 类型快照**：它认为 `Question` 没有 `confirmedByUserId`、`Decision` 没有 `tags`/`rubricEntries`/`questions`、`TagWhereUniqueInput` 没有 `nameNormalized_userId`。磁盘类型（`.prisma/client/index.d.ts`，`confirmedByUserId` 108 处、`DecisionCountOutputType` 23 处、第 31022 行有 compound key）、`tsc --noEmit`、lint、304 项测试、以及在真库上跑通的全回路都反证它是错的。已试过：touch / 追加内容到生成的 d.ts / 整目录删除重生成 / 改 tsconfig 触发程序重载（都被挡住或无效）。**需重启语言服务器 / pi-lens。**
+- 另加 `.pi-lens.json`（`{"disabledServers":["deno"]}`）：deno 是本项目 TS 文件上不该并行的 alternate，`effective_config` 已确认它变为 `disabled-by-config`。
+
+### Next Steps（给人）
+- 重启语言服务器后，`import_router.ts` 里那两处带解释的 `pi-lens-ignore` 标记可以删掉。
+- 决定是否给 ADR-0032 §四 补一句澄清（我未改 ADR 文字）。
+
+## Session: 2026-09-16（第二轮：复查发现的机械项）
+
+### Completed
+- E：`pages/domains.test.tsx` → `lib/web/domains.test.tsx`（AGENTS.md:604 明文禁止测试文件放在 pages/ 下；不修则 `next build` 会产出一条 `/domains.test` 路由）。
+- D：`./startup.sh` **修好并真跑通**——它此前在装技能时崩溃，这才是 `.agents/skills/` 里只有一半技能的真正原因（我上一轮误判为“生成目录过期”）。
+- 纯文档四项：ADR-0023 例外登记表补 7 行、ADR-0034 写明它修正 ADR-0006、AGENTS.md §10 门禁描述补 tags router、`domain-report` 的 usage 与真实阈值对齐、SKILL.md 跳号修正。
+- 回归：tsc 干净 · lint 干净 · **356 passed / 28 suites**。
+
+### Lessons Learned
+- **`bash -n` 不是验证**：语法检查完全抓不到 `set -u` 下的运行时失败。`startup.sh` 里 `$skill_name（源在…` 紧跟**全角括号**，非 UTF-8 locale 下 bash 把那些字节算进变量名 ⇒ `unbound variable`，脚本当场死掉，而 `bash -n` 说“没问题”。**脚本类改动的验证必须是真跑一次**，并且 `$var` 后面跟非 ASCII 字符时一律写 `${var}`（审计脚本已留下，剩余地雷 0）。
+- **移动文件要 grep 全部相对路径**：我只改了顶部两行 import，漏了文件深处的 `jest.mock("../lib/web/trpc", …)`，于是套件级失败（jest 报 “suite failed to run”，而用例计数看着还是“全过”）。**移动后必须 grep `"\.\./|"\./|require(`**。
+- **验证要看套件数，不只看用例数**：失败的那次输出是 “1 failed, 28 suites / 348 passed”——用例数在涨、套件在挂，只看 “passed” 就会漏掉。
+- 复查（code-review 技能，两轴并行子代理）确实抓到了我自己的测试与 tsc 都抓不到的东西：文档/ADR 与实现漂移、误触明文规则、以及那个脚本崩溃。**“测试全绿”不等于“规范全对”。**
+
+### ② 悬空在复盘的可见性（业主裁定 A：在写入处挡住）
+
+- **写入路径本来就是对的**：`scoreQuestion` 早在用 `meteredForecasts(settlementRecordOf(...))` 过滤，且有自证用例。真问题是**陈旧数据**（2 行改动前写入的 `QuestionScore`）+ **没有任何消费者渲染 §二/§三 的显示名**。
+- 补做：重算受影响题（残留行 0）／`DANGLING_LABEL`、`CONFIRMED_BY_OTHER_LABEL`、`settlementLabelOf` 放进判据旁（一处措辞）／`decision.byId` 返回 `settlementScope` + `settlementLabel`／复盘页把"已揭晓没分数"拆成悬空与 ADR-0018 两个成因（纯函数 `unscoredCauses` + 单测）。
+
+### Lessons Learned（本轮）
+- **"数据脏"和"代码错"看起来一样，必须先分清**：我上一轮把 2 行陈旧数据讲成"计量泄漏"（持续违反），实际代码早就挡住了。判据差异：陈旧数据只影响已存在的行，代码错会持续生成新行——**去问"还能不能再造一行出来"，而不是只看现状**。
+- **给页面写渲染测试前，先看它的 fixture 债**：这个复盘页要吃 15 个字段，页面级测试的成本远高于把逻辑提成纯函数。**逻辑提纯函数 + 页面只渲染**是更省的路。
+
+### ③ 到期提醒里的未标领域计数（业主裁定 P1）
+
+- 判据抽成 `untaggedDecisionWhere(userId)`（`domain_tags.ts`），列表与计数共用一处；`agent.listDue` 新增 `untaggedDecisions`。
+- **P1 政策落地**：`>0` 就报，**与有没有到期项无关**（有单测钉住"两栏皆空时计数照样返回"）。技能、AGENTS.md、CLI 摘要三处文案同步。
+
+### Lessons Learned（③）
+- **锚点太通用 = 改到别处**：我给 `])` + `return {` 做替换，文件里有多处这样的块，于是我漏看的那一行（计数查询）根本没进去，`tsc` 立刻报"元组没有第 3 个元素"。**教训：锚点必须包含能把位置钉死的上下文**（`orderBy` 之类的邻居行），而**改完必须让编译器复核元组/签名**——这次是 `tsc` 接住的。
+- **`jest.mock` 的工厂会静默吃掉新导出**：`jest.mock("./domain_tags", () => ({...}))` 让 `untaggedDecisionWhere` 变成 undefined。**给纯谓词用 `jest.requireActual` 取真实现**——mock 掉它等于把"两处共用同一判据"这件事测没了。
+
+### ④ 两处重复（业主裁定 M1）
+
+- **分桶：真的合并了。** 先证明两份实现逐条等价（10 等宽 / `>= 1` 钳位都有 / binCenter 同式 / 空桶同样 `binCenter` + `meanOutcome = NaN` / 输出四键一致），再提到 `lib/web/calibration_bins.ts` 的 `calibrationBinsOf`，`domain_stats` 与 `pages/api/calibration_graph.ts` 共用。**行为等价有证据**：两个消费者的既有测试（含 fixture 的 0.64/−0.64/恰好 0）全绿。另加 `calibration_bins.test.ts` 直接钉住钳位、边界、空桶 NaN。
+- **投影：查清后没有可合并的重复。** `toPredictionView`（队列：resolveBy/oracleKind/quantified/latestForecast）与复盘视图（resolution/score）**字段集合本就不同**；真正必须一致的部分（§二/§三 的判定与措辞）已经在 `settlement_scope.ts` 里只有一份。硬合并会造出一个两个面都用不全的联合类型——那是重新引入复杂度，不是消重。**记录该结论，不再动它。**
+
+### Lessons Learned（④）
+- 复查给的"重复"要**先证明等价再合并**：这次两边连钳位都恰好一样，合并才敢做；如果当时只有一边带钳位，合并就会把一个**越界 bug** 悄悄修掉或悄悄引入。
+- **"看起来重复" ≠ "可合并"**：两个投影字段不同、共享的只有 3 个字段，"合并"只会产出一个谁都用不全的类型。判断标准是**"是否存在一个必须一致的量"**——分桶有（同一个人在两处必须看到同一个形状），投影没有。
+
+### ⑤ danglingReason 的"空串契约"（业主裁定 N1）
+
+- 参数收窄为 `SettlementRecord & { resolutionSource: null }`，新增类型守卫 `isDangling`（§六 判据的直接推论）；空串分支消失，调用点（队列）改用守卫收窄类型。
+- 仓库 eslint 的 `no-unused-vars` **不认 `_` 前缀** ⇒ 与其改 lint 配置，不如让参数真的被用到：边界上断言"来源必为 null"，越界（有人 `as` 绕过）就**抛**，而不是静默返回空话。并为这个守卫补了用例。
+- 那条"固定怪契约"的断言（有来源时返回 `""`）随之删掉。
+
+### ⑥ pi-lens 相关物（业主裁定 H3）
+
+- 删掉 `import_router.ts` 里那两处 `pi-lens-ignore: typescript:2322`（连同解释性注释）——它们是**工具 bug 的补丁**（会话内语言服务器持有陈旧 Prisma 快照），与仓库原有的 3 处（抑制 `no-eval` / `no-open-redirect` / `unchecked-throwing-call` 这类**真实安全规则**）性质不同。混在一起会让"忽略标记"这个信号贬值。
+- `.pi-lens.json` 加进 `.gitignore`（它关的是**本机**被误选的 deno 服务器——机器级配置，不属于仓库）。
+
+### 关于 pi-lens 的标准与工程标准是否一致（业主问）
+- **格式化：一致。** 它重排过的文件经仓库口径（Prettier `--check`）全部通过 ⇒ 输出与 Prettier 兼容。
+- **规则集合：不一致。** 它额外跑仓库门禁不管的规则（Markdown MD060、对 `scripts/` 也报 `no-console`），且其 TypeScript 诊断来自**可能持有陈旧快照**的语言服务器（本会话那批 2322 误报即由此而来）。
+- **结论（写入 AGENTS.md）**：本仓库的判定标准是 `tsc` + `next lint` + `jest`；pi-lens 的额外规则是参考，不是门禁。
+
+### ⑦ 迁移升级验证脚本的去留（业主裁定 V1）
+
+- 先澄清事实：它**不是上游/fork 遗产**，也不是本轮临时造的——整个 `scripts/` 未跟踪，文件创建于今天，出自 `.pi/todos/c5b45af1.md`（测试审计，P1 项），且**已在 CI 里跑**（`test.yml:81`）。
+- 它解决的是空库 CI 抓不到的事：**已经装着数据的库**升级后对不对（两条回填的口径 + 大小写冲突必须大声失败）。
+- **V1 落地**：AGENTS.md 的「验证规范」新增一节**白话版**（讲清"回填"是什么、为什么空库 CI 会骗人、什么时候不用管、什么时候必须补检查），脚本头部加指针（把迁移加进 `UPGRADE_MIGRATIONS` + 补断言）。
+- 关键理由（也写进了 AGENTS.md）：脚本只认识写死的那几条，**新迁移不会自动跟随** ⇒ 不立规矩的话，CI 的绿灯与本次改动无关，**比没有门禁更糟**。
+
+### 本轮七项裁决的共同教训
+- **先核事实再下结论**：七项里有 **3 项**（①④⑤→ 其中 ① 是"我读错 ADR"、④ 是"投影没有真重复"、⑦ 是"并非无票据"）在我查证后**改变了原来的判断**。复查报告与我的复述都可能不全对——**每条都要回到代码/数据/CI 去核**。
+- 查证手段很有用：**真库 SQL**（悬空却带分数的行数）、**git 身份**（未跟踪 vs 已提交，判断"这是谁的产物"）、**CI 配置**（判断"这道门禁到底守没守"）。

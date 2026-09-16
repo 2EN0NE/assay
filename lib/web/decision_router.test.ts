@@ -12,6 +12,9 @@ jest.mock("../prisma", () => {
       findFirst: jest.fn(),
       findMany: jest.fn(),
       update: jest.fn(),
+      // 挂接预测时的写时复制（ADR-0030 §三）会读决策的领域；默认给“无领域”，
+      // 于是复制是空动作，不干扰既有断言（它们关心的是清单与锁定）。
+      findUnique: jest.fn().mockResolvedValue({ tags: [] }),
     },
     decisionRubricEntry: { upsert: jest.fn(), findMany: jest.fn() },
     question: { findFirst: jest.fn(), findMany: jest.fn(), update: jest.fn() },
@@ -32,6 +35,9 @@ const decisionCreate = (
 const decisionFindFirst = (
   prisma as unknown as { decision: { findFirst: jest.Mock } }
 ).decision.findFirst
+const decisionFindUnique = (
+  prisma as unknown as { decision: { findUnique: jest.Mock } }
+).decision.findUnique
 const rubricUpsert = (
   prisma as unknown as { decisionRubricEntry: { upsert: jest.Mock } }
 ).decisionRubricEntry.upsert
@@ -143,6 +149,63 @@ describe("decision.byId（ADR-0019 · ticket 01）", () => {
     await expect(asOwner().byId({ decisionId: "d1" })).rejects.toThrow(
       /找不到该决策/,
     )
+  })
+})
+
+describe("decision.byId 的结算处境标签（ADR-0031 §二/§三）", () => {
+  const withQuestion = (question: Record<string, unknown>) =>
+    decisionFindFirst.mockResolvedValue({
+      id: "d1",
+      rubricVersion: 1,
+      statement: "换个城市",
+      rubricEntries: [],
+      questions: [
+        {
+          id: "q1",
+          title: "命题",
+          resolved: true,
+          resolutionSource: null,
+          confirmedByUserId: "user-2",
+          questionScores: [],
+          ...question,
+        },
+      ],
+    })
+
+  it("悬空 ⇒ DANGLING，且带上 §二 的显示名（不是看起来像没这条预测）", async () => {
+    withQuestion({})
+
+    const detail = await asOwner().byId({ decisionId: "d1" })
+
+    expect(detail.questions[0].settlementScope).toBe("DANGLING")
+    expect(detail.questions[0].settlementLabel).toBe("未结算（无可核查来源）")
+  })
+
+  it("有来源 + 他方确认 ⇒ 生效，但仍标出“不是我签的字”（§三）", async () => {
+    withQuestion({ resolutionSource: "https://data.example.org/cpi" })
+
+    const detail = await asOwner().byId({ decisionId: "d1" })
+
+    expect(detail.questions[0].settlementScope).toBe("EFFECTIVE")
+    expect(detail.questions[0].settlementLabel).toBe("由他方确认结算")
+  })
+
+  it("本人确认且无来源 ⇒ 生效，不挂标签", async () => {
+    withQuestion({ confirmedByUserId: "user-1" })
+
+    const detail = await asOwner().byId({ decisionId: "d1" })
+
+    expect(detail.questions[0].settlementScope).toBe("EFFECTIVE")
+    expect(detail.questions[0].settlementLabel).toBeNull()
+  })
+
+  it("还没结算 ⇒ UNRESOLVED，不挂标签（悬空不能由“还没结算”产生）", async () => {
+    withQuestion({ resolved: false })
+
+    const detail = await asOwner().byId({ decisionId: "d1" })
+
+    expect(detail.questions[0].settlementScope).toBe("UNRESOLVED")
+    expect(detail.questions[0].settlementLabel).toBeNull()
   })
 })
 
@@ -374,6 +437,33 @@ describe("鉴权：未解析到 owner 时必须当场拒绝（ADR-0015）", () =
 })
 
 describe("decision.attachPrediction（ADR-0019 · ticket 03）", () => {
+  it("挂接时把决策**当时**的领域复制到预测上（ADR-0030 §三 自证：去掉传播即变红）", async () => {
+    decisionFindFirst.mockResolvedValue(decisionFixture())
+    questionFindFirst.mockResolvedValue({ id: "q1", decisionId: null })
+    questionUpdate.mockResolvedValue({ id: "q1", decisionId: "d1" })
+    // 决策此刻有领域 ⇒ 挂接必须把它们写到预测上，且只做并集（connect，不是 set）：
+    // 预测本可以有自己的标签（上游按题标签），领域是叠加的一层，不是覆盖它。
+    decisionFindUnique.mockResolvedValue({ tags: [{ id: "t1" }, { id: "t2" }] })
+
+    await asOwner().attachPrediction({ decisionId: "d1", questionId: "q1" })
+
+    expect(questionUpdate).toHaveBeenLastCalledWith({
+      where: { id: "q1" },
+      data: { tags: { connect: [{ id: "t1" }, { id: "t2" }] } },
+    })
+  })
+
+  it("决策没有领域时，挂接不做多余的一次写", async () => {
+    decisionFindFirst.mockResolvedValue(decisionFixture())
+    questionFindFirst.mockResolvedValue({ id: "q1", decisionId: null })
+    questionUpdate.mockResolvedValue({ id: "q1", decisionId: "d1" })
+    decisionFindUnique.mockResolvedValue({ tags: [] })
+
+    await asOwner().attachPrediction({ decisionId: "d1", questionId: "q1" })
+
+    expect(questionUpdate).toHaveBeenCalledTimes(1)
+  })
+
   it("把已有 Prediction 挂到决策上", async () => {
     decisionFindFirst.mockResolvedValue(decisionFixture())
     questionFindFirst.mockResolvedValue({ id: "q1", decisionId: null })

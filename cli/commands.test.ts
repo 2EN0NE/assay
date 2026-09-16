@@ -4,6 +4,7 @@ import {
   Command,
   CommandContext,
   DecisionApi,
+  TagsApi,
   commands,
 } from "./commands"
 
@@ -20,6 +21,8 @@ const CALLER_METHODS = [
   "listUnendorsed",
   "listRevisions",
   "settle",
+  "recordResolutionSource",
+  "listAuditRecords",
   "listProposals",
   "decideProposal",
   "listPendingDeliveries",
@@ -39,10 +42,23 @@ const DECISION_METHODS = [
 
 type MockDecision = Record<(typeof DECISION_METHODS)[number], jest.Mock>
 
+const TAGS_METHODS = [
+  "listDomains",
+  "addDomain",
+  "setDecisionDomains",
+  "listUntaggedDecisions",
+  "renameDomain",
+  "deleteDomain",
+  "domainReport",
+] as const
+
+type MockTags = Record<(typeof TAGS_METHODS)[number], jest.Mock>
+
 function fakeContext(): {
   /** 断言用：保留 jest.Mock 以便检查调用参数 */
   mocks: MockAgent
   decisionMocks: MockDecision
+  tagsMocks: MockTags
   /** 传参用：直接复用真实形状，避免手抄一份后与实现脉动 */
   session: CommandContext
 } {
@@ -54,17 +70,24 @@ function fakeContext(): {
     DECISION_METHODS.map((name) => [name, jest.fn().mockResolvedValue(name)]),
   ) as MockDecision
 
+  const tagsMocks = Object.fromEntries(
+    TAGS_METHODS.map((name) => [name, jest.fn().mockResolvedValue(name)]),
+  ) as MockTags
+
   // SAFETY: mocks 覆盖 CALLER_METHODS 的每一个过程，是被测代码会触达的全部面。
   // 这里只是把 jest.fn 的 `mock` 属性从类型上抹掉，好让被测代码看到真实签名。
   const agent = mocks as unknown as AgentApi
   const decision = decisionMocks as unknown as DecisionApi
+  const tags = tagsMocks as unknown as TagsApi
 
   return {
     mocks,
     decisionMocks,
+    tagsMocks,
     session: {
       agent,
       decision,
+      tags,
       userId: "user-1",
       email: "owner@example.com",
       credentialSource: "api-key-env",
@@ -125,6 +148,96 @@ describe("CLI 命令翻译层", () => {
     expect(input.oracleKind).toBe("PUBLIC_FACT")
     expect(input.probability).toBeCloseTo(0.7)
     expect(input.resolveBy).toBeInstanceOf(Date)
+  })
+
+  describe("create-prediction —— 来源默认极性按调用上下文（ADR-0024）", () => {
+    const MARKERS = ["AI_AGENT", "PI_CODING_AGENT", "PI_SESSION_ID"]
+    const saved: Record<string, string | undefined> = {}
+
+    // 测试不得依赖环境里的标记：本仓库的测试经常正是被 pi 起来的。
+    beforeEach(() => {
+      for (const marker of MARKERS) {
+        saved[marker] = process.env[marker]
+        delete process.env[marker]
+      }
+    })
+
+    afterEach(() => {
+      for (const marker of MARKERS) {
+        const value = saved[marker]
+        if (value === undefined) {
+          delete process.env[marker]
+        } else {
+          process.env[marker] = value
+        }
+      }
+    })
+
+    async function predict(extra: string[] = []) {
+      const { mocks, session } = fakeContext()
+      await command("create-prediction").run(
+        parseArgs([
+          "--title",
+          "会在三个月内拿到 offer",
+          "--resolve-by",
+          "2026-03-01",
+          "--criteria",
+          "邮件里出现正式 offer 字样",
+          ...extra,
+        ]),
+        session,
+      )
+      return mocks.createPrediction.mock.calls[0][0]
+    }
+
+    it("无 agent 标记（人在终端里敲）⇒ 默认数字由当事人给出，审计记为 HUMAN 发起", async () => {
+      const input = await predict()
+      expect(input.statedByOwner).toBe(true)
+      expect(input.initiator).toBe("HUMAN")
+      expect(input.agentSessionId).toBeUndefined()
+    })
+
+    it("有 PI_CODING_AGENT 标记（pi 代跑）⇒ 默认待背书，且审计记为 AGENT 发起", async () => {
+      process.env.PI_CODING_AGENT = "true"
+      process.env.PI_SESSION_ID = "sess-1"
+      const input = await predict()
+      expect(input.statedByOwner).toBe(false)
+      expect(input.initiator).toBe("AGENT")
+      expect(input.agentSessionId).toBe("sess-1")
+    })
+
+    it("AI_AGENT 标记单独出现也足够", async () => {
+      process.env.AI_AGENT = "pi"
+      expect((await predict()).statedByOwner).toBe(false)
+    })
+
+    it("显式 --stated-by-owner 压过 agent 标记", async () => {
+      process.env.AI_AGENT = "pi"
+      expect((await predict(["--stated-by-owner"])).statedByOwner).toBe(true)
+    })
+
+    it("显式 --agent-collected 压过终端里的默认", async () => {
+      expect((await predict(["--agent-collected"])).statedByOwner).toBe(false)
+    })
+
+    it("两个来源 flag 同时给出被拒（说明调用方自己没想清楚）", async () => {
+      const { session } = fakeContext()
+      await expectRunToThrow(
+        command("create-prediction"),
+        parseArgs([
+          "--title",
+          "x",
+          "--resolve-by",
+          "2026-03-01",
+          "--criteria",
+          "y",
+          "--stated-by-owner",
+          "--agent-collected",
+        ]),
+        session,
+        /互斥/,
+      )
+    })
   })
 
   it("create-prediction 省略概率时不传 probability（未量化是合法状态）", async () => {
@@ -290,6 +403,9 @@ describe("决策命令（ADR-0019 / 0020 · ticket 05）", () => {
       expectedOutcome: undefined,
       knownInfo: undefined,
       unknownInfo: "会不会被收购",
+      // 没给 --domains 就是空数组："没标领域"与"标了 0 个领域"在这里是同一件事，
+      // 服务端把空数组当"不动领域"。
+      domains: [],
     })
   })
 
@@ -388,6 +504,203 @@ describe("决策命令（ADR-0019 / 0020 · ticket 05）", () => {
     expect(decisionMocks.byId).not.toHaveBeenCalled()
   })
 
+  it("--tags 按逗号拆成领域数组，只去外层空白（判重折叠交给服务端的领域规则）", async () => {
+    const { decisionMocks, session } = fakeContext()
+
+    await command("create-decision").run(
+      parseArgs([
+        "--statement",
+        "接这个 offer",
+        "--tags",
+        " 投资/宏观 , 投资/公司业绩-Q3 ,",
+      ]),
+      session,
+    )
+
+    expect(decisionMocks.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        domains: ["投资/宏观", "投资/公司业绩-Q3"],
+      }),
+    )
+  })
+
+  it("add-domain / list-domains 直译（造词只此一门，未知领域不会被静默创建）", async () => {
+    const { tagsMocks, session } = fakeContext()
+
+    await command("add-domain").run(
+      parseArgs(["--name", "投资/估值与价格"]),
+      session,
+    )
+    expect(tagsMocks.addDomain).toHaveBeenCalledWith({
+      name: "投资/估值与价格",
+    })
+
+    await command("list-domains").run(parseArgs([]), session)
+    expect(tagsMocks.listDomains).toHaveBeenCalledWith()
+  })
+
+  it("retag-decision 把补齐/重标的区别交给服务端判：--reason 原样透传", async () => {
+    const { tagsMocks, session } = fakeContext()
+
+    await command("retag-decision").run(
+      parseArgs([
+        "--decision-id",
+        "d1",
+        "--tags",
+        "投资/宏观,投资/公司业绩-Q3",
+        "--reason",
+        "原先标太粗",
+      ]),
+      session,
+    )
+
+    expect(tagsMocks.setDecisionDomains).toHaveBeenCalledWith({
+      decisionId: "d1",
+      domains: ["投资/宏观", "投资/公司业绩-Q3"],
+      reason: "原先标太粗",
+    })
+  })
+
+  it("retag-decision 缺 decision-id 时报错，且不触达过程", async () => {
+    const { tagsMocks, session } = fakeContext()
+
+    await expectRunToThrow(
+      command("retag-decision"),
+      parseArgs(["--tags", "投资/宏观"]),
+      session,
+      /decision-id/,
+    )
+    expect(tagsMocks.setDecisionDomains).not.toHaveBeenCalled()
+  })
+
+  it("list-untagged-decisions 支持 --limit，不给则交给服务端默认值", async () => {
+    const { tagsMocks, session } = fakeContext()
+
+    await command("list-untagged-decisions").run(
+      parseArgs(["--limit", "5"]),
+      session,
+    )
+    expect(tagsMocks.listUntaggedDecisions).toHaveBeenCalledWith({ limit: 5 })
+
+    await command("list-untagged-decisions").run(parseArgs([]), session)
+    expect(tagsMocks.listUntaggedDecisions).toHaveBeenCalledWith({
+      limit: undefined,
+    })
+  })
+
+  describe("领域与悬空补录命令（ADR-0030 §十五 / ADR-0031 §五）", () => {
+    it("domain-report 要求 --prefix：读数必须指明是哪个领域", async () => {
+      const { tagsMocks, session } = fakeContext()
+
+      await command("domain-report").run(
+        parseArgs(["--prefix", "投资/宏观"]),
+        session,
+      )
+      expect(tagsMocks.domainReport).toHaveBeenCalledWith({
+        prefix: "投资/宏观",
+      })
+
+      await expectRunToThrow(
+        command("domain-report"),
+        parseArgs([]),
+        session,
+        /prefix/,
+      )
+      expect(tagsMocks.domainReport).toHaveBeenCalledTimes(1)
+    })
+
+    it("rename-domain 三个旗标缺一不可：改名必须留痕，没理由就不该发生", async () => {
+      const { tagsMocks, session } = fakeContext()
+
+      await command("rename-domain").run(
+        parseArgs([
+          "--from",
+          "投资/宏观",
+          "--to",
+          "投资/宏观-v2",
+          "--reason",
+          "对齐 CPI",
+        ]),
+        session,
+      )
+      expect(tagsMocks.renameDomain).toHaveBeenCalledWith({
+        from: "投资/宏观",
+        to: "投资/宏观-v2",
+        reason: "对齐 CPI",
+      })
+
+      await expectRunToThrow(
+        command("rename-domain"),
+        parseArgs(["--from", "投资/宏观", "--to", "投资/宏观-v2"]),
+        session,
+        /reason/,
+      )
+      // 缺理由时不得触达过程：否则改名会以“无痕”的形式发生
+      expect(tagsMocks.renameDomain).toHaveBeenCalledTimes(1)
+    })
+
+    it("delete-domain 透传名字（有引用时由服务端拒绝，CLI 不自己判）", async () => {
+      const { tagsMocks, session } = fakeContext()
+
+      await command("delete-domain").run(
+        parseArgs(["--name", "投资/旧词"]),
+        session,
+      )
+      expect(tagsMocks.deleteDomain).toHaveBeenCalledWith({ name: "投资/旧词" })
+    })
+
+    it("record-resolution-source 原样透传来源与理由，缺 question-id 时当场报错", async () => {
+      const { mocks, session } = fakeContext()
+
+      await command("record-resolution-source").run(
+        parseArgs([
+          "--question-id",
+          "q1",
+          "--source",
+          "https://data.example.org/cpi",
+          "--rationale",
+          "官方发布",
+          "--reason",
+          "旧链接失效",
+        ]),
+        session,
+      )
+      expect(mocks.recordResolutionSource).toHaveBeenCalledWith({
+        questionId: "q1",
+        source: "https://data.example.org/cpi",
+        rationale: "官方发布",
+        reason: "旧链接失效",
+      })
+
+      await expectRunToThrow(
+        command("record-resolution-source"),
+        parseArgs(["--source", "https://data.example.org/cpi"]),
+        session,
+        /question-id/,
+      )
+      expect(mocks.recordResolutionSource).toHaveBeenCalledTimes(1)
+    })
+
+    it("list-audit-records 透传筛选开关，limit 缺省为 50", async () => {
+      const { mocks, session } = fakeContext()
+
+      await command("list-audit-records").run(parseArgs([]), session)
+      expect(mocks.listAuditRecords).toHaveBeenCalledWith({
+        onlyAgentSessionOwnerClaims: false,
+        limit: 50,
+      })
+
+      await command("list-audit-records").run(
+        parseArgs(["--only-owner-claims", "--limit", "10"]),
+        session,
+      )
+      expect(mocks.listAuditRecords).toHaveBeenLastCalledWith({
+        onlyAgentSessionOwnerClaims: true,
+        limit: 10,
+      })
+    })
+  })
+
   it("--help 里能看到新命令（它们必须可被发现）", () => {
     const names = commands.map((entry) => entry.name)
     expect(names).toEqual(
@@ -398,6 +711,15 @@ describe("决策命令（ADR-0019 / 0020 · ticket 05）", () => {
         "set-rubric",
         "update-narrative",
         "show-decision",
+        "add-domain",
+        "list-domains",
+        "domain-report",
+        "retag-decision",
+        "list-untagged-decisions",
+        "rename-domain",
+        "delete-domain",
+        "record-resolution-source",
+        "list-audit-records",
       ]),
     )
   })

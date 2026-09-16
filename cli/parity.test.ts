@@ -2,6 +2,7 @@ import fs from "node:fs"
 import path from "node:path"
 import { agentRouter } from "../lib/web/agent_router"
 import { decisionRouter } from "../lib/web/decision_router"
+import { tagsRouter } from "../lib/web/tags_router"
 
 /**
  * 交互面对等守门测试（AGENTS.md 第 10 节 / [ADR-0023](../../docs/adr/0023-interaction-surface-parity.md)）。
@@ -18,6 +19,12 @@ import { decisionRouter } from "../lib/web/decision_router"
  */
 
 jest.mock("trpc-transformer", () => ({ __esModule: true, default: undefined }))
+// tags_router 直接引 _utils_server（内含 ESM 的 node-fetch，jsdom 下拉不起来）。
+// 这道门只枚举过程名、不执行它们，把分析事件打成空壳即可。
+jest.mock("../lib/_utils_server", () => ({
+  __esModule: true,
+  backendAnalyticsEvent: jest.fn(),
+}))
 jest.mock("../lib/web/resolution", () => ({
   handleQuestionResolution: jest.fn(),
   rescoreResolvedQuestion: jest.fn(),
@@ -56,6 +63,10 @@ const DELIBERATE_EXCEPTIONS: ReadonlyMap<string, string> = new Map([
     "agent.listUnendorsed",
     "Web 侧以题页的 amber「尚未背书」块呈现同一信息（ADR-0007 / ADR-0008 的可见性要求）",
   ],
+  [
+    "agent.listAuditRecords",
+    "审计筛选是库主对全库的复查动作（不是单条问题的视图），而审计字段在他人读路径上的可见性尚未裁决（ADR-0027 Consequences 明写“尚未裁决”）——登记为例外，不静默缺失",
+  ],
   // —— 待议：需判断 Web 是否已有等价能力（ADR-0023 例外表「待议」一行）
   [
     "agent.listDue",
@@ -65,6 +76,10 @@ const DELIBERATE_EXCEPTIONS: ReadonlyMap<string, string> = new Map([
   [
     "agent.listPendingDeliveries",
     "待议：触达状态机的拉取接口，Web 尚无对应物（ADR-0017 / ADR-0023 例外表）",
+  ],
+  [
+    "agent.recordResolutionSource",
+    "待补：悬空是被队列（listDue.dangling）发现的，而队列在 agent 手里；Web 侧入口随题目页写入口一起做（见 09–11）。在它补上之前，被代签的那一方只能从 CLI/agent 侧补来源（ADR-0031 §五）",
   ],
   [
     "agent.reportDelivery",
@@ -88,6 +103,27 @@ const DELIBERATE_EXCEPTIONS: ReadonlyMap<string, string> = new Map([
     "待补：Web 侧缺把预测挂到决策上的入口（见 11）",
   ],
   ["decision.detachPrediction", "待补：Web 侧缺解绑入口（见 11）"],
+  // —— 领域（ADR-0030）：题目标签是既有能力，其入口一直只在 Web 上（不是本次新增的缺口）
+  [
+    "tags.getAll",
+    "既有能力的入口只在 Web：TagsSelect 的候选列表（对决策领域无 CLI 用途）",
+  ],
+  [
+    "tags.getByName",
+    "既有能力的入口只在 Web：题页 /tag/[tag] 按名字看该标签下的题",
+  ],
+  [
+    "tags.setQuestionTags",
+    "既有能力的入口只在 Web：题页 QuestionDetails 改题目标签；本次给决策加的领域是另一回事（ADR-0030 §三）",
+  ],
+  [
+    "tags.renameDomain",
+    "待补：改名会重写历史归属（带理由留痕），需要专门的领域整理视图而不是顺手一改的按钮；暂以 CLI 为唯一入口（ADR-0030 §十四）",
+  ],
+  [
+    "tags.deleteDomain",
+    "待补：删词是破坏性动作（只允许零引用），适合与改名同居一个整理视图；暂以 CLI 为唯一入口（ADR-0030 §十五）",
+  ],
 ])
 
 /** 去掉注释再扫描：注释里写一句 `api.decision.create` 不该被当成"已实现"。 */
@@ -139,7 +175,7 @@ function listSourceFiles(relativeDir: string): string[] {
  */
 export function cliProceduresInSource(source: string): Set<string> {
   const found = stripComments(source).matchAll(
-    /(?<!prisma\.)\b(agent|decision)\.([A-Za-z][A-Za-z0-9]*)\s*\(/g,
+    /(?<!prisma\.)\b(agent|decision|tags)\.([A-Za-z][A-Za-z0-9]*)\s*\(/g,
   )
   return new Set(
     Array.from(found).map(([, router, name]) => `${router}.${name}`),
@@ -159,7 +195,7 @@ function webSurface(): Set<string> {
     for (const file of listSourceFiles(relativeDir)) {
       const source = stripComments(fs.readFileSync(file, "utf8"))
       const found = source.matchAll(
-        /\bapi\.(agent|decision)\.([A-Za-z][A-Za-z0-9]*)/g,
+        /\bapi\.(agent|decision|tags)\.([A-Za-z][A-Za-z0-9]*)/g,
       )
       for (const [, router, name] of Array.from(found)) {
         surfaces.add(`${router}.${name}`)
@@ -218,6 +254,7 @@ export function findStaleExceptions(
 const ALL_PROCEDURES = [
   ...procedureNames(agentRouter).map((name) => `agent.${name}`),
   ...procedureNames(decisionRouter).map((name) => `decision.${name}`),
+  ...procedureNames(tagsRouter).map((name) => `tags.${name}`),
 ].sort()
 
 describe("对等性守门（AGENTS.md §10 / ADR-0023）", () => {
@@ -253,7 +290,7 @@ describe("对等性守门（AGENTS.md §10 / ADR-0023）", () => {
   it("例外表里每条都带理由，且没有过期条目（另一侧补上了就该删行）", () => {
     for (const procedure of Array.from(DELIBERATE_EXCEPTIONS.keys())) {
       expect(DELIBERATE_EXCEPTIONS.get(procedure)?.trim()).not.toBe("")
-      expect(procedure).toMatch(/^(agent|decision)\./)
+      expect(procedure).toMatch(/^(agent|decision|tags)\./)
     }
 
     expect(

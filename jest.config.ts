@@ -88,6 +88,47 @@ const config: Config = {
       lines: 80,
       statements: 80,
     },
+    // 领域与结算范围（ADR-0030/0031）——这一 phase 里逻辑最密、且**错了没有症状**的
+    // 几块：判重键选错只让分桶慢慢不可解释，悬空判据写反只会静默多算一个样本。
+    // 前四项是纯函数（实测 85–100），门槛取 80 是为了拦住“用例被删/改坏”而不是
+    // 追求数字；`tags_router.ts` 的 90 上限来自它改写历史归属的几条守卫。
+    "./lib/web/domain_stats.ts": {
+      branches: 80,
+      functions: 80,
+      lines: 80,
+      statements: 80,
+    },
+    "./lib/web/domain_tags.ts": {
+      branches: 80,
+      functions: 80,
+      lines: 80,
+      statements: 80,
+    },
+    "./lib/web/settlement_scope.ts": {
+      branches: 80,
+      functions: 80,
+      lines: 80,
+      statements: 80,
+    },
+    "./lib/web/settlement_authority.ts": {
+      branches: 80,
+      functions: 80,
+      lines: 80,
+      statements: 80,
+    },
+    "./lib/web/tags_router.ts": {
+      branches: 80,
+      functions: 80,
+      lines: 80,
+      statements: 80,
+    },
+    // 悬空的唯一出口（`recordResolutionSource`）与结算返回码都在这支。
+    "./lib/web/agent_router.ts": {
+      branches: 80,
+      functions: 80,
+      lines: 80,
+      statements: 80,
+    },
   },
   testEnvironment: "jsdom",
 }

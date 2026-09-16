@@ -232,11 +232,29 @@ The CLI and the Web UI are **two interaction surfaces over one set of capabiliti
 - **Scope**: this project's own feature surface. Capabilities inherited from upstream fatebook (Slack, Discord, the Chrome extension, tournaments, blog) are **not** covered — most are already outside the MVP per ADR-0013.
 - **Unit of parity**: a tRPC procedure. A procedure reachable on only one surface must be registered as a deliberate exception, **with a reason**.
 - **Deliberate exceptions** are listed, never silently tolerated. The first is _sign-in_: the Web signs in by email/OAuth, the CLI by credential — the capability ("prove who I am and obtain a credential") is identical, the form cannot be. Current list: [ADR-0023](docs/adr/0023-interaction-surface-parity.md).
-- **Enforcement**: `cli/parity.test.ts` is the gate. It reads each surface's reachability **from source** — the CLI surface from `cli/commands.ts`, the Web surface from `api.<router>.<name>` references under `pages/` and `components/` — then compares every procedure of the `agent` and `decision` routers against the exception list: a procedure reachable on only one surface, with no registered reason, is named by the failing test. A stale exception (the other surface has since caught up) turns it red too, prompting the row's removal.
+- **Enforcement**: `cli/parity.test.ts` is the gate. It reads each surface's reachability **from source** — the CLI surface from `cli/commands.ts`, the Web surface from `api.<router>.<name>` references under `pages/` and `components/` — then compares every procedure of the `agent`, `decision` and `tags` routers against the exception list: a procedure reachable on only one surface, with no registered reason, is named by the failing test. A stale exception (the other surface has since caught up) turns it red too, prompting the row's removal.
 
   The price is that the exception list is **maintained inside the test file** (every entry must carry a reason, copied from ADR-0023's "current exception list"): adding a procedure without deciding where it lands on the other surface fails the gate. That is deliberate — a "silent absence" is exactly what this rule exists to prevent.
 
 Rationale, rejected alternatives and the current exception list: [ADR-0023](docs/adr/0023-interaction-surface-parity.md).
+
+#### One backend, three exposures
+
+Business behaviour has **exactly one implementation**: the tRPC procedures in `lib/web/`. A surface is an adapter over those procedures, never a second implementation of the rules.
+
+| Exposure                  | Where                   | How it reaches the backend                                                                                                                                                                |
+| ------------------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CLI (agents, scripts)     | `cli/`                  | calls `appRouter` **in-process**; touching `prisma` for a _business_ operation is forbidden (identity lookup, connection teardown and pre-flight counts are infrastructure, not business) |
+| Web (humans)              | `pages/`, `components/` | calls the same procedures over tRPC                                                                                                                                                       |
+| Agent skill (any harness) | `skills/`               | a **projection of the CLI command surface** — instructions and examples only, never behaviour of its own                                                                                  |
+
+Adding a capability therefore has a fixed order: **procedure → CLI command → skill entry → Web entry**. The last one matters only when the capability is user-facing; the parity gate in `cli/parity.test.ts` decides that, and a new capability is not done until both surfaces are settled.
+
+**Harness neutrality.** A skill must load in any runtime that follows the [Agent Skills specification](https://agentskills.io/specification) — no pi-specific paths or flags may appear in the skill body, and the skill must state provenance **explicitly** instead of relying on the caller's environment (environment markers only supply a default; see ADR-0024). A non-pi agent must record what a pi agent would record.
+
+**Deliverable shape.** Every agent-facing capability ships with an executable acceptance path: what to say, what to run, what to observe. "It should work" is not acceptance — see `docs/uat-pi-agent.md` for the first one.
+
+**No harness-specific artefacts.** This project ships three exposures: the CLI, the Web UI, and Agent Skills. Anything that works only inside one agent runtime — a pi extension, a Claude hook, a cron job, a long-running pusher — is out of scope, however convenient it would be: it re-binds "does this work" to that runtime, which is the thing the skill format exists to avoid. Reminders and tracking are therefore **pull-based**: `AGENTS.md` tells the agent to pull the due queue at the start of a session, and the skill states when to pull. Never a background process.
 
 ---
 
@@ -790,6 +808,10 @@ If you make a mistake later, you can always use `git revert` or `git reset` to f
 
 判据是"文件在 program 内 + tsc 干净 + 字段存在于生成产物"。三条同时成立即为陈旧缓存，重跑 `prisma generate` 或重启语言服务器即可，**不要改代码去迎合它**。
 
+**pi-lens 的额外规则不是本仓库的门禁。** 它的格式化器与 Prettier 兼容（实测：它重排过的文件仍过 `prettier --check`），但它另外跑一套仓库不管的规则（Markdown MD060、对 `scripts/` 也报 `no-console`）。判定本仓库是否合格，只看 `tsc` + `next lint` + `jest`（CI 口径见下表）。
+
+**`pi-lens-ignore` 标记只用于真实规则。** 本仓库已有三处（`no-eval` / `no-open-redirect` / `unchecked-throwing-call`）——那是“这条规则我不接受”的声明。**不要用它给工具自身的 bug 打补丁**（例如陈1旧 Prisma 快照导致的 `typescript:2322`）：那种补丁会长期留在源码里，而它真正需要的是重启语言服务器。`.pi-lens.json` 这类本机配置已进 `.gitignore`，不要入库。
+
 ### 分层验证命令
 
 | 层                    | 命令                    | 前置                                                               |
@@ -801,6 +823,28 @@ If you make a mistake later, you can always use `git revert` or `git reset` to f
 | 端到端（agent → Web） | `npm run test:e2e`      | `docker compose up -d db mail` + `npx playwright install chromium` |
 
 > **本地要跑与 CI 完全一致的那条**：`.github/workflows/test.yml` 的门禁是 `test:coverage`（`jest.config.ts` 的 `coverageThreshold` 只在它下面生效）。历史上交付记录里写的都是 `npm test`，于是某个新模块跌破阈值时**本地全绿、CI 全红**，谁都没看见。`.husky/pre-push` 现在跑的就是 `test:coverage`。
+
+### 改动数据库里**已有的**数据之前，先跑 `scripts/verify-migration-upgrade.ts`
+
+**这是什么时候的事。** 库里已经存着真实数据（题、预测、结算记录……）。有时候改动不只是“加一张新表”，而是**要动那些已经存在的老行**。两种情况最常见：
+
+1. **回填**：新加一列（例如“这条结算是谁确认的”），同时**替历史上已经结算过的老题把这一列补上**。补什么值是**你替过去的用户做的一个决定**。
+2. **收紧规矩**：例如“领域名不允出现只差大小写的两个”。库里若真有 `CPI` 和 `cpi` 两行，迁移会**失败**——这是**想要的**（得有人来决定合并哪一个），但你得提前知道。
+
+**为什么不能只靠 CI。** CI 里的 `prisma migrate deploy` 每次都在一个**全新的空库**上跑。空库上没有老行，回填等于什么也没做，所以**写错也照样绿**。它只证明了“迁移能跑起来”，没证明“你库里的几百行会被改成什么样”。而回填写错的后果是**不报错的**：样本静静地少一批或多一批，数字变了而你不知道。
+
+**它能帮上什么忙。** 它开一个独立的小库（**不碰你的开发库**），先把这次改动**之前**的迁移都应用上去，塞进一批符合老结构的数据，再跑完整迁移，然后检查三件事：
+
+1. 该补的有没有补上（老行现在有值了吗？值对不对？）；
+2. 不该动的有没有被动（例：没结算的题不该被写上确认者）；
+3. **该失败的地方有没有失败**（有大小写冲突时必须大声报错，而不是悄悄丢掉一行）。
+
+跑法：`npx tsx scripts/verify-migration-upgrade.ts --keep`（`--keep` 把那个样本库留下，可以自己进去看）。CI 每次会替你跑一遍。
+
+**⚠️ 它只认识写死的那几条迁移，不会自动跟上你新写的。** 所以新增迁移时：
+
+- 只是加新表 / 加一个**允许为空**的新列（不回填）/ 只加索引 / 改注释 → **不用管它**；
+- 要**回填老数据**或**收紧约束** → **必须在这个脚本里补上检查**（把新迁移加进顶部的 `UPGRADE_MIGRATIONS`，并在同一脚本里加断言）。否则 CI 的绿灯与这次的改动无关——**比没有门禁更糟**：没有门禁时你知道自己在裸奔，有骗人的绿灯时你以为有人守着。
 
 ### 可观测性契约
 
@@ -861,9 +905,38 @@ ADR **只追加、不回改**：历史决策保持原样，新结论写进新的
 - **判据是"换算是否无损"。** 无损（换表示）→ 可直接落库；有损（需额外假设）→ 必须**复述给当事人确认**后再落库。
 - **否定检验只能用命题的逻辑否定。** "明天不下雨"是"明天下雨"的否定；"天晴"不是——雨 30% 与晴 10% 可由阴天 60% 补齐，因此二者**不构成矛盾**。用近义事件当否定会产生无根据的追问，而无根据的追问正是 `Compliance Number` 的来源。
 - **具体化量到的是偏好，不是信念。** 赌局同时测出风险偏好与赌注大小，其输出只是候选值，必须经当事人确认；**不得由 agent 按"风险中性"自行折算**。
-- **折算结果的录入来源（ADR-0008）：** 直接说出的百分比、量表折算结果、经确认的具体化候选值，都算"数字由当事人给出"（`AGENT_INSTRUCTED`，默认已背书）；只有 agent 自己产生、当事人从未说过的数字才是 `--agent-collected`。
+- **折算结果的录入来源（ADR-0008 / ADR-0024）：** 直接说出的百分比、量表折算结果、经确认的具体化候选值，都算"数字由当事人给出"（已背书）；只有 agent 自己产生、当事人从未说过的数字才是 `--agent-collected`（未背书，须背书后才计入校准）。**默认方向按调用上下文决定**：agent 代跑（环境里有 `AI_AGENT` / `PI_CODING_AGENT`）时默认未背书，人自己在终端里敲时默认已背书；`--stated-by-owner` 与 `--agent-collected` 是显式声明，永远压过默认。旧值 `AGENT_INSTRUCTED` 已不再产生（历史行仍在库里）。
 
 ---
+
+## 跟踪回路：会话开始时拉一次到期队列
+
+skills 有两半：`decision-capture`（捕获）与 `settlement-tracking`（跟踪）。**只有捕获没有
+跟踪时，队列会积一堆永远不结算的题**，而“永远不结算”不会报错——它只是让所有读数慢慢
+失效（ADR-0034）。
+
+**会话开始时先拉一次**（对话涉及决策 / 复盘 / 到期时也先拉）：
+
+```bash
+npm run --silent agent -- list-due
+```
+
+- 输出**两栏，不要混**：`settleable` 是待办；`dangling` 是“没法定论”（只有他人的无来源
+  确认，ADR-0031）——后者需要的是补来源或问当事人，不是你去结算。把两者混在一起会让人
+  把“没法定论”读成“我还没去结算”，于是去替别人签字。
+- **提醒上限**：报**计数** + 最多 **3 条**最近的到期项，然后停下。不阻塞对话、不在每次
+  回复里重复。一条被忽略的提醒和不存在没有区别，而重复到被忽略只需要几次（§四）。
+- **另报一行未标领域计数**（ADR-0030 §八）：`untaggedDecisions > 0` 时带上“未标领域：
+  N 条（补标：`list-untagged-decisions`）”。**没有到期项时也要报**——它依附的是
+  “拉过一次队列”，不是“队列非空”；只在有到期项时顺带提，那句要求就落不了地。
+- **默认不主动结算**：结算不可回退（ADR-0020 的锁定单向性）。先说清要结哪几条、依据是
+  什么，等用户点头。
+- 悬空那一栏的出口是**补录可核查来源**（`record-resolution-source`），但来源必须是真的：
+  问用户，不要编一个链接填空——那比悬空更糟。
+
+**不做**：pi 扩展、Claude hook、cron 脚本、常驻守护进程、任何外部推送通道（ADR-0034 §二）。
+提醒的载体只有本节与 skill 本身，两者都是跨 harness 的中性约定；只在一个运行时里能用的东西，
+会把“这套流程能不能用”重新绑回那个运行时，而**失效时不会有任何报错**。
 
 ## 日志体系
 

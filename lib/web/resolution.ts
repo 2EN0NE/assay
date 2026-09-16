@@ -15,13 +15,16 @@ import {
 import { filterToUniqueIds } from "../_utils_common"
 import prisma from "../prisma"
 import { endorsedForecasts, isRelativeScored } from "./calibration"
+import { countsTowardMetrics, SettlementRecord } from "./settlement_scope"
 import { createNotification } from "./notifications"
 import { getQuestionUrl } from "./question_url"
 
-/** 结算证据（ADR-0004）：自行结算与提案被采纳时随结算一并写入。 */
+/** 结算记录（ADR-0004 / ADR-0031 §三）：来源、理由，以及**谁确认的**。 */
 export type ResolutionEvidence = {
   source?: string | null
   rationale?: string | null
+  /** 确认者（ADR-0031 §三）。生效范围的判据依赖它：无来源时只有本人计入。 */
+  confirmedByUserId?: string | null
 }
 
 async function dbResolveQuestion(
@@ -42,6 +45,7 @@ async function dbResolveQuestion(
         ? {
             resolutionSource: evidence.source ?? null,
             resolutionRationale: evidence.rationale ?? null,
+            confirmedByUserId: evidence.confirmedByUserId ?? null,
           }
         : {}),
     },
@@ -338,7 +342,7 @@ export async function handleQuestionResolution(
       (option) => option.resolution === null,
     )
     if (unresolvedOptions.length === 0) {
-      await scoreQuestionOptions(resolution, result, false)
+      await scoreQuestionOptions(resolution, result, false, evidence)
     } else {
       return
     }
@@ -397,9 +401,55 @@ export async function handleQuestionResolution(
   }
 }
 
+/**
+ * 一条题的结算记录（ADR-0031）。
+ *
+ * `pending` 用于**正在结算**的那条路径：非互斥多选题在最后一个选项结算时先给选项
+ * 打分，而那一刻 question 行还没写 `resolved`——但这次结算就是当下正在发生的这次，
+ * 所以它的来源与确认者按传入的 evidence 计入。不这样处理，那条路径会以「未结算」
+ * 为由把全部样本排除掉。
+ */
+function settlementRecordOf(
+  question: Pick<
+    Question,
+    "resolved" | "resolutionSource" | "confirmedByUserId"
+  >,
+  pending?: ResolutionEvidence,
+): SettlementRecord {
+  if (!pending) {
+    return {
+      resolved: question.resolved,
+      resolutionSource: question.resolutionSource,
+      confirmedByUserId: question.confirmedByUserId,
+    }
+  }
+  return {
+    resolved: true,
+    resolutionSource: pending.source ?? null,
+    confirmedByUserId: pending.confirmedByUserId ?? null,
+  }
+}
+
+/**
+ * 进入计量的预测 = 已背书（ADR-0008）+ 结算对它生效（ADR-0031 §六）。
+ *
+ * 合成一个入口是为了让「哪条预测该被算」只有一处答案：分成两个 filter 迟早会出现
+ * 一处漏掉，而漏掉的方向是静默多算——被代签者的校准里混进他没确认的结算。
+ */
+function meteredForecasts<T extends { endorsed: boolean; userId: string }>(
+  settlement: SettlementRecord,
+  forecasts: T[],
+): T[] {
+  return endorsedForecasts(forecasts).filter((forecast) =>
+    countsTowardMetrics(settlement, forecast.userId),
+  )
+}
+
 export async function scoreQuestion(
   resolution: Resolution,
   question: QuestionWithForecastsAndScores,
+  /** 正在结算的那一次（见 `settlementRecordOf`）。重算路径不传，从行上读。 */
+  pending?: ResolutionEvidence,
 ) {
   let scores: ScoreCollection = {}
   // ADR-0018：判据判不出来（AMBIGUOUS）→ 没有样本可计，不产生任何分数、也不落库。
@@ -408,8 +458,12 @@ export async function scoreQuestion(
   if (resolution != Resolution.AMBIGUOUS) {
     log("Question is unambig")
     // ADR-0008：未背书的 agent 搜集样本不计入校准
+    // ADR-0031 §六：无来源且由他人确认的结算，对被代签者不生效
     scores = relativeBrierScoring(
-      endorsedForecasts(question.forecasts),
+      meteredForecasts(
+        settlementRecordOf(question, pending),
+        question.forecasts,
+      ),
       question,
     )
     // ADR-0002：非公共事实类不进入相对分（写库即为 relativeScore = null）
@@ -425,8 +479,14 @@ export async function scoreQuestionOptions(
   resolution: string,
   question: QuestionWithForecastsAndOptionsAndScores,
   exclusive: boolean,
+  /**
+   * 正在结算的那一次。**非互斥多选题**必须传（见 `settlementRecordOf`）：它在最后
+   * 一个选项结算时先给选项打分，而那一刻 question 行还没写 `resolved`。
+   */
+  pending?: ResolutionEvidence,
 ): Promise<ScoreCollection> {
   let scores: ScoreCollection = {}
+  const settlement = settlementRecordOf(question, pending)
 
   if (resolution !== Resolution.AMBIGUOUS) {
     log("Question is unambiguous")
@@ -437,7 +497,7 @@ export async function scoreQuestionOptions(
 
     for (const option of question.options) {
       const optionScores = relativeBrierScoring(
-        endorsedForecasts(option.forecasts),
+        meteredForecasts(settlement, option.forecasts),
         option,
       )
       // ADR-0002：非公共事实类的选项级分数也不带相对分

@@ -31,6 +31,10 @@ localhost.pem
 # pi / agent 运行时（只放行 skills——它们是项目交付物）
 .pi/*
 !.pi/skills/
+
+# 技能安装目标：startup.sh 把 skills/ 下的源安装到这里。
+# 它是生成物，源在 skills/。
+.agents/skills/
 .agent/*
 !.agent/skills/
 
@@ -40,3 +44,11 @@ localhost.pem
 # Playwright
 playwright-report/
 test-results/
+
+# pi-lens 是本地开发工具：它的配置（例如关掉被误选的 deno 服务器）属于这台机器，
+# 不属于这个仓库——同样的诊断噪音在不同机器上长得不一样。
+.pi-lens.json
+
+# 会话过程文件：这类 todo 是工作记录，不是产品的一部分，不进版本历史。
+todo.md
+.pi/todos/

@@ -127,7 +127,7 @@ L6  决策卫生工具层    事前剖析 / 杀死标准 / 尤利西斯合同 / 
 - **M — 跟踪通过普通 pi 调用实现**（[ADR-0005](./adr/0005-tracking-as-plain-pi-invocation.md)）：跟踪不是服务，而是一次 pi agent 调用（独立上下文由 harness 提供）。
 - **N — 触发时机**（[ADR-0006](./adr/0006-tracking-triggers.md)）：到期触发 + 定期巡检必选；事件驱动可选，且**只传证据、不传推理**。
 - **A — 保留人类操作的写入口**（[ADR-0007](./adr/0007-human-operated-ui-and-record-provenance.md)）：人类在 Web/TUI 的直接操作是最可信的兜底输入源，写能力保留；Agent 创建的记录须标注**录入来源**。
-- **O — 未背书记录不进校准**（[ADR-0008](./adr/0008-endorsement-required-for-agent-collected.md)）：Agent 自主搜集的记录须经当事人**背书**才计入校准；未背书者可展示、可复盘，但不作校准样本。录入来源分 `HUMAN` / `AGENT_INSTRUCTED`（**数字由当事人给出**，天然已背书）/ `AGENT`（Agent 自己取得，须显式声明 `--agent-collected`）——判据是数字的来源，不是有无明确指令。
+- **O — 未背书记录不进校准**（[ADR-0008](./adr/0008-endorsement-required-for-agent-collected.md)）：Agent 自主搜集的记录须经当事人**背书**才计入校准；未背书者可展示、可复盘，但不作校准样本。录入来源分 `HUMAN` / `AGENT_INSTRUCTED`（**数字由当事人给出**，天然已背书）/ `AGENT`（Agent 自己取得，须显式声明 `--agent-collected`）——判据是数字的来源，不是有无明确指令。（后续修正：[ADR-0024](./adr/0024-provenance-default-by-context.md) 把**默认方向**改为按调用上下文决定，`AGENT_INSTRUCTED` 不再产生，`HUMAN` / `AGENT` 保留。）
 - **I + P — 自动识别、察觉即追问**（[ADR-0009](./adr/0009-auto-capture-and-immediate-grilling.md)）：对话中自动识别决策（显式指令兜底），察觉即追问以保**信念新鲜度**；需配"稍后再说"退路。
 - **J — 追问到底**（[ADR-0010](./adr/0010-grill-until-answer.md)）：追问到拿到概率 / 期限 / 判据为止；代价是敷衍数字，缓解靠"我还没想清楚"的**显式出口**（见 `Q`）。
 - **Q — 未量化的预测**（[ADR-0011](./adr/0011-unquantified-predictions.md)）：追问的终点可以是"还没想清楚"——只存命题、无 Forecast；它是**合法状态**，且让"逃避量化"可见。

@@ -18,6 +18,7 @@ import {
   filterToUniqueIds,
   forecastsAreHidden,
   getDateYYYYMMDD,
+  hasMultipleForecasters,
 } from "../_utils_common"
 import { backendAnalyticsEvent } from "../_utils_server"
 import {
@@ -41,6 +42,7 @@ import {
   getSearchedPredictionBounds,
   matchesAnEmailDomain,
 } from "./utils"
+import { normalizeDomainName } from "./domain_tags"
 
 function calculateUniqueForecasterCount(
   question: QuestionWithForecasts | QuestionWithForecastsAndOptions,
@@ -510,6 +512,8 @@ export const questionRouter = router({
                     },
                     create: {
                       name: tag,
+                      // ADR-0030 §十二：判重折叠大小写；显示保留原样。
+                      nameNormalized: normalizeDomainName(tag),
                       userId: ctx.userId as string,
                     },
                   })),
@@ -627,13 +631,20 @@ export const questionRouter = router({
     })
     .output(z.undefined())
     .mutation(async ({ input, ctx }) => {
-      await getQuestionAssertAuthor(ctx, input.questionId, input.apiKey)
+      const question = await getQuestionAssertAuthor(
+        ctx,
+        input.questionId,
+        input.apiKey,
+      )
 
       await handleQuestionResolution(
         input.questionId,
         input.resolution,
         input.questionType as QuestionType,
         input.optionId,
+        // ADR-0031 §三：记下谁确认的。这条路径上面就按作者断言，所以确认者就是作者
+        // ——与迁移里回填历史数据的口径一致（旧模型下也只有作者能结算）。
+        { confirmedByUserId: question.userId },
       )
 
       await backendAnalyticsEvent("question_resolved", {
@@ -1789,6 +1800,15 @@ export function scrubHiddenForecastsAndSensitiveDetailsFromQuestion<
       return true
     }
     if (question.hideForecastsUntilPrediction) {
+      return true
+    }
+    // ADR-0028：多人题上「提交前看不到他人的值」是**默认行为**，没有显式开关。
+    //
+    // 这一条不能省：上面那个 `forecastsAreHidden` 只决定要不要进这个分支，而这里
+    // 才决定**抹掉谁的什么**。少了它，多预测者的默认保护就只剩“界面不渲染”——
+    // 概率与 userId 仍原样出现在 tRPC / `/api/v0/getQuestion` 的响应体里，第二个
+    // 押注的人打开网络面板就能读到第一个人的数字，而那是这套保护要防的唯一一件事。
+    if (hasMultipleForecasters(question)) {
       return true
     }
     return false

@@ -3,6 +3,8 @@ import type { NextApiRequest, NextApiResponse } from "next"
 import ChartJSImage from "chart.js-image"
 import prisma from "../../lib/prisma"
 import { ENDORSED_ONLY } from "../../lib/web/calibration"
+import { calibrationBinsOf } from "../../lib/web/calibration_bins"
+import { countsTowardMetrics } from "../../lib/web/settlement_scope"
 import { getChartJsParams } from "../../lib/web/utils"
 import { log } from "../../lib/_log"
 
@@ -138,6 +140,8 @@ export async function getBucketedForecasts(userId: string, tags?: string[]) {
         .filter((f) =>
           excludeForecastsCreatedInLastMinuteBySameUser(f, q.forecasts),
         )
+        // ADR-0031 §六：无来源且由他人确认的结算不进校准（悬空）
+        .filter((f) => countsTowardMetrics(q, f.userId))
         .map((f) => ({
           forecast: f.forecast.toNumber(),
           resolution: q.resolution,
@@ -162,6 +166,8 @@ export async function getBucketedForecasts(userId: string, tags?: string[]) {
                 option.forecasts,
               ),
             )
+            // ADR-0031 §六：同二进制题，悬空样本不进校准
+            .filter((f) => countsTowardMetrics(q, f.userId))
             .map((f) => ({
               forecast: f.forecast.toNumber(),
               resolution: option.resolution,
@@ -171,44 +177,11 @@ export async function getBucketedForecasts(userId: string, tags?: string[]) {
 
   forecasts.push(...mcqForecasts)
 
-  // Create 10 equal-width bins: [0-10%), [10-20%), ..., [90-100%]
-  const NUM_BINS = 10
-  const BIN_WIDTH = 1.0 / NUM_BINS
-
-  // Guarantees each forecast goes to exactly one bin
-  function getBinIndex(value: number): number {
-    if (value >= 1.0) return NUM_BINS - 1
-    return Math.floor(value * NUM_BINS)
-  }
-
-  const bins: (typeof forecasts)[] = Array.from({ length: NUM_BINS }, () => [])
-  forecasts.forEach((f) => {
-    bins[getBinIndex(f.forecast)].push(f)
-  })
-
-  const bucketedForecasts = bins.map((forecastsInBin, i) => {
-    const binStart = i * BIN_WIDTH
-    const binEnd = (i + 1) * BIN_WIDTH
-    const binCenter = (binStart + binEnd) / 2
-
-    const count = forecastsInBin.length
-    const meanPrediction =
-      count > 0
-        ? forecastsInBin.reduce((sum, f) => sum + f.forecast, 0) / count
-        : binCenter
-
-    const meanOutcome =
-      count > 0
-        ? forecastsInBin.filter((f) => f.resolution === Resolution.YES).length /
-          count
-        : NaN
-
-    return {
-      binCenter,
-      meanPrediction,
-      meanOutcome,
-      count,
-    }
+  // 分桶只有一处定义（`calibrationBinsOf`）：这里曾经是第二份实现，与领域读数各写
+  // 一遍，靠“同口径”那句话维系——而那句话不会在有人只改一边时报错。
+  const bucketedForecasts = calibrationBinsOf(forecasts, {
+    forecastOf: (f) => f.forecast,
+    outcomeOf: (f) => (f.resolution === Resolution.YES ? 1 : 0),
   })
 
   return { bucketedForecasts }

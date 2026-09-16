@@ -3,6 +3,11 @@ import { TRPCError } from "@trpc/server"
 import { z } from "zod"
 import prisma from "../prisma"
 import { assertOwnedDecision } from "./decision_router"
+import type { Prisma } from "@prisma/client"
+import { propagateDecisionDomainsToQuestion } from "./domain_tags"
+import { decideSettlement } from "./settlement_authority"
+import { danglingReason, isDangling } from "./settlement_scope"
+import { untaggedDecisionWhere } from "./domain_tags"
 import { handleQuestionResolution, rescoreResolvedQuestion } from "./resolution"
 import { ownedProcedure, router } from "./trpc_base"
 
@@ -41,8 +46,13 @@ export type PredictionView = {
 
 function toPredictionView(
   question: Question & { forecasts: Forecast[] },
+  viewerId: string,
 ): PredictionView {
-  const latest = [...question.forecasts].sort(
+  // 报给调用方的必须是**我的**读数，不是全场最近的一条：
+  // 共享题上别人刚押的数字既不该被当成这条题的读数，也不该在我提交前被我看到
+  // （ADR-0028）。单人自用时两者等价，所以这不改变既有行为。
+  const mine = question.forecasts.filter((f) => f.userId === viewerId)
+  const latest = [...mine].sort(
     (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
   )[0]
   return {
@@ -54,7 +64,7 @@ function toPredictionView(
     provenance: question.provenance,
     resolutionCriteria: question.resolutionCriteria,
     scoringAnchor: question.scoringAnchor,
-    quantified: question.forecasts.length > 0,
+    quantified: mine.length > 0,
     latestForecast: latest
       ? {
           id: latest.id,
@@ -63,20 +73,6 @@ function toPredictionView(
         }
       : null,
   }
-}
-
-async function assertOwnedQuestion(userId: string, questionId: string) {
-  const question = await prisma.question.findFirst({
-    where: { id: questionId, userId },
-    include: { forecasts: true },
-  })
-  if (!question) {
-    throw new TRPCError({
-      code: "NOT_FOUND",
-      message: `找不到属于当前 owner 的预测：${questionId}`,
-    })
-  }
-  return question
 }
 
 function notify(
@@ -106,12 +102,12 @@ function notify(
  */
 function notificationFor(
   quantified: boolean,
-  agentCollected: boolean,
+  unendorsed: boolean,
 ): { title: string; tags: string[] } {
   if (!quantified) {
     return { title: "新增未量化命题", tags: ["unquantified"] }
   }
-  if (agentCollected) {
+  if (unendorsed) {
     return { title: "新增待背书预测", tags: ["unendorsed"] }
   }
   return { title: "新增已确认预测", tags: ["quantified"] }
@@ -129,17 +125,134 @@ export const agentRouter = router({
         .optional(),
     )
     .query(async ({ ctx, input }) => {
-      const due = await prisma.question.findMany({
-        where: {
-          userId: ctx.userId,
-          resolved: false,
-          resolveBy: { lte: input?.now ?? new Date() },
+      const limit = input?.limit ?? 50
+      const [due, danglingCandidates, untaggedDecisions] = await Promise.all([
+        prisma.question.findMany({
+          where: {
+            userId: ctx.userId,
+            resolved: false,
+            resolveBy: { lte: input?.now ?? new Date() },
+          },
+          orderBy: { resolveBy: "asc" },
+          take: limit,
+          include: { forecasts: true },
+        }),
+        // 悬空未结算（ADR-0031 §二）：**已结算**，但那次结算对我不生效（无来源且不是
+        // 本人确认）。它必须可见——让「没有计量」与「没有这条预测」在复盘时不可区分，
+        // 才是真问题。这里不按 owner 过滤：悬空的是**我押过的**题。
+        prisma.question.findMany({
+          where: {
+            resolved: true,
+            resolutionSource: null,
+            forecasts: { some: { userId: ctx.userId } },
+          },
+          orderBy: { resolvedAt: "desc" },
+          take: limit,
+          include: { forecasts: true },
+        }),
+        // ADR-0030 §八：未标领域必须可见。计数与列表共用同一个判据
+        // （`untaggedDecisionWhere`），否则两处各说各话。
+        prisma.decision.count({ where: untaggedDecisionWhere(ctx.userId) }),
+      ])
+
+      return {
+        settleable: due.map((q) => toPredictionView(q, ctx.userId)),
+        // ADR-0030 §八：未标领域必须可见，且**没有到期项时也要报**——这一行依附的是
+        // “队列被拉过一次”，不是“队列非空”；只在有到期项时顺带提，那句要求就落不了地。
+        untaggedDecisions,
+        // 判据只有一处（`settlementScopeOf`）：这里不重写一遍「什么算悬空」。
+        dangling: danglingCandidates
+          .filter((q) => isDangling(q, ctx.userId))
+          .map((q) => ({
+            ...toPredictionView(q, ctx.userId),
+            reason: danglingReason(q),
+          })),
+      }
+    }),
+
+  /**
+   * 补录可核查来源（ADR-0031 §五）。
+   *
+   * 存在理由：悬空是合法状态，但不能是**死路**。后来出现了可核查来源 ⇒ 把来源补上
+   * ⇒ 该题上所有预测计入。这不是「撤销结算」：`resolved`/`resolvedAt`/分数以外的东西
+   * 都不动，因此不触碰 ADR-0020 的锁定单向性（也不回退锁定时点）。
+   *
+   * 谁可以补：题目作者或在该题上押过注的 Owner——即被这次判定**影响到的当事方**。
+   * 不开放给无关身份：补来源会改变别人的计量。
+   *
+   * 为什么放在 agent 侧：悬空是被**队列**（`listDue.dangling`）发现的，而那条队列正是
+   * agent 手里的；Web 侧的入口随题目页写入口一起做（见 ticket 09–11）。
+   */
+  recordResolutionSource: ownedProcedure
+    .input(
+      z.object({
+        questionId: z.string(),
+        source: z.string().min(1),
+        rationale: z.string().optional(),
+        /** 改写**已有**来源时必须给理由（那是改历史口径，不是补缺）。 */
+        reason: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      const question = await prisma.question.findUnique({
+        where: { id: input.questionId },
+        select: {
+          id: true,
+          resolved: true,
+          resolutionSource: true,
+          userId: true,
+          forecasts: { select: { userId: true } },
         },
-        orderBy: { resolveBy: "asc" },
-        take: input?.limit ?? 50,
-        include: { forecasts: true },
       })
-      return due.map(toPredictionView)
+      if (!question) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "找不到这条预测" })
+      }
+      if (!question.resolved) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "这条题还没结算。来源是随结算一并写入的，先结算（带 --source）才有东西可补。",
+        })
+      }
+
+      const isAffected =
+        question.userId === ctx.userId ||
+        question.forecasts.some((f) => f.userId === ctx.userId)
+      if (!isAffected) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message:
+            "你不是建题者，也没在这条题上押过注：补来源会改变别人的计量，只有被影响的当事方可以补（ADR-0031 §五）。",
+        })
+      }
+
+      const hadSource = question.resolutionSource !== null
+      if (hadSource && !input.reason) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "这条题已经有来源了。改写已有来源是改历史口径，必须给理由（--reason）。",
+        })
+      }
+
+      await prisma.question.update({
+        where: { id: question.id },
+        data: {
+          resolutionSource: input.source,
+          // Prisma 把 undefined 当「不动这个字段」，所以没给理由时保留原有理由
+          resolutionRationale: input.rationale,
+        },
+      })
+
+      // 重算：不重算的话，ADR-0031 §五 承诺的「补录后全部计入」只会停在数据上，
+      // 分数不补——与 ADR-0008 的背书重算是同一条理由。
+      await rescoreResolvedQuestion(question.id)
+
+      return {
+        questionId: question.id,
+        source: input.source,
+        rewritten: hadSource,
+      }
     }),
 
   /** 全部未结算（含未到期）——供定期巡检发现"判据已经可以判了"。 */
@@ -156,7 +269,7 @@ export const agentRouter = router({
         take: input?.limit ?? 50,
         include: { forecasts: true },
       })
-      return open.map(toPredictionView)
+      return open.map((q) => toPredictionView(q, ctx.userId))
     }),
 
   /**
@@ -180,12 +293,19 @@ export const agentRouter = router({
          * 只有 Agent **自己取得**这个数字（不是当事人说的）时才置 true——
          * 此时记录进未背书队列，由当事人在 Web 上背书后才计入校准。
          */
-        agentCollected: z.boolean().default(false),
+        // ADR-0024：路由层**没有默认值**，调用方必须显式声明来源。
+        // 两边都不猜：猜错的代价是“把 agent 的数字当成当事人的”，而这件事
+        // 不会报错、只会让当事人的校准数据静默变脏。
+        statedByOwner: z.boolean(),
         /**
          * ADR-0019：这条 Prediction 属于哪个 Decision。
          * 必须是自己的决策——挂到别人的决策上等于越权写。
          */
         decisionId: z.string().optional(),
+        // 审计线索（ADR-0027）。`initiator` 必填：路由层不给默认值，猜错的方向
+        // 恰好是"把 agent 发起的记录当成人的"，而那正是要能对质的那一类。
+        initiator: z.enum(["HUMAN", "AGENT"]),
+        agentSessionId: z.string().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -197,7 +317,7 @@ export const agentRouter = router({
         })
       }
 
-      const provenance = input.agentCollected ? "AGENT" : "AGENT_INSTRUCTED"
+      const provenance = input.statedByOwner ? "HUMAN" : "AGENT"
 
       let decisionId: string | null = null
       if (input.decisionId !== undefined) {
@@ -219,8 +339,20 @@ export const agentRouter = router({
           notes: input.note,
           provenance,
           decisionId,
+          initiator: input.initiator,
+          agentSessionId: input.agentSessionId ?? null,
         },
       })
+
+      // ADR-0030 §三：**创建时就归属决策**这条路径与 `attachPrediction` 是同一次“挂接”，
+      // 所以领域必须同样写时复制过来。
+      //
+      // 少了这一步不会有任何症状：题照常建、复盘照常看，只是这条 Prediction 永远不带
+      // 领域，于是它**不进任何领域读数**——读数的 n 少了一批，而没有任何东西会变红
+      // （这条缺口正是链路测试 `e2e/domain-tracking.spec.ts` 发现并钉住的）。
+      if (decisionId !== null) {
+        await propagateDecisionDomainsToQuestion(decisionId, question.id)
+      }
 
       let forecastId: number | null = null
       if (input.probability !== undefined) {
@@ -232,8 +364,10 @@ export const agentRouter = router({
             provenance,
             // ADR-0008：Agent 自己取得的数字须经当事人背书才计入校准；
             // 数字由当事人给出的天然已背书。
-            endorsed: !input.agentCollected,
-            endorsedAt: input.agentCollected ? null : new Date(),
+            endorsed: input.statedByOwner,
+            endorsedAt: input.statedByOwner ? new Date() : null,
+            initiator: input.initiator,
+            agentSessionId: input.agentSessionId ?? null,
           },
         })
         forecastId = forecast.id
@@ -245,7 +379,7 @@ export const agentRouter = router({
           : Math.round(input.probability * 100)
       const notification = notificationFor(
         forecastId !== null,
-        input.agentCollected,
+        !input.statedByOwner,
       )
 
       await notify(
@@ -336,6 +470,53 @@ export const agentRouter = router({
     }))
   }),
 
+  /**
+   * 审计线索清单（ADR-0027）：把 `initiator` 与 `provenance` 摆在一起，
+   * 使"来自 pi 会话、却声明数字由当事人给出"的记录**可以被筛出来复查**。
+   *
+   * 它不是"可疑名单"：当事人在 agent 会话里亲口给出数字是完全正常的路径
+   * （ADR-0024 允许且要求显式声明）。这个清单存在的意义只是让那次声明**可对质**
+   * ——否则默认方向就成了一次不可复查的自我申报。
+   */
+  listAuditRecords: ownedProcedure
+    .input(
+      z.object({
+        onlyAgentSessionOwnerClaims: z.boolean().default(false),
+        limit: z.number().int().positive().max(500).default(50),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      // 过滤条件写成显式的 if，而不是条件空对象展开：这条规则的两种形状在日志与
+      // 类型推导上都更清楚，而审计筛选最怕的就是“看起来滤了、其实没滤”。
+      const where: Prisma.ForecastWhereInput = { userId: ctx.userId }
+      if (input.onlyAgentSessionOwnerClaims) {
+        where.initiator = "AGENT"
+        where.provenance = "HUMAN"
+      }
+
+      const forecasts = await prisma.forecast.findMany({
+        where,
+        include: { question: { select: { title: true } } },
+        orderBy: { createdAt: "desc" },
+        take: input.limit,
+      })
+
+      return forecasts.map((f) => ({
+        forecastId: f.id,
+        questionId: f.questionId,
+        title: f.question.title,
+        forecast: Number(f.forecast),
+        provenance: f.provenance,
+        endorsed: f.endorsed,
+        initiator: f.initiator,
+        agentSessionId: f.agentSessionId,
+        createdAt: f.createdAt,
+        /** 供人一眼看出的那条组合，而不是让读者自己对照两列。 */
+        ownerClaimFromSession:
+          f.initiator === "AGENT" && f.provenance === "HUMAN",
+      }))
+    }),
+
   listRevisions: ownedProcedure
     .input(z.object({ questionId: z.string() }))
     .query(async ({ ctx, input }) => {
@@ -368,7 +549,18 @@ export const agentRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const question = await assertOwnedQuestion(ctx.userId, input.questionId)
+      // ADR-0029：不再用“属于当前 owner 才看得到”的断言——建题者的身份不带来任何
+      // 结算特权，因此先按 id 取题，再由授权矩阵决定这次调用能做什么。
+      const question = await prisma.question.findFirst({
+        where: { id: input.questionId },
+        include: { forecasts: true },
+      })
+      if (!question) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: `找不到这条预测：${input.questionId}`,
+        })
+      }
       if (question.resolved) {
         throw new TRPCError({
           code: "BAD_REQUEST",
@@ -376,34 +568,52 @@ export const agentRouter = router({
         })
       }
 
-      if (question.oracleKind === "SELF_REPORT") {
-        await notify(
-          ctx.userId,
-          "需要你本人报告结论",
-          `「${question.title}」属于自我报告类，只能由你本人给出结论。判据：${question.resolutionCriteria ?? "（未记录）"}`,
-          `/q/${question.id}`,
-          question.id,
-          ["needs-self-report"],
-        )
+      const decision = decideSettlement({
+        oracleKind: question.oracleKind,
+        hasSource: input.source !== undefined,
+        callerOwnsForecast: question.forecasts.some(
+          (f) => f.userId === ctx.userId,
+        ),
+      })
+
+      if (decision.mode === "requires-human-report") {
+        // 问的对象是**预测的 Owner**（没人押过时退回建题者，因为那条自我报告说的
+        // 就是他本人）。向调用方自己发一条“请你报告”的提醒是没用的。
+        const toNotify =
+          question.forecasts.length > 0
+            ? Array.from(new Set(question.forecasts.map((f) => f.userId)))
+            : [question.userId]
+        for (const ownerId of toNotify) {
+          await notify(
+            ownerId,
+            "需要你本人报告结论",
+            `「${question.title}」属于自我报告类，只能由你本人给出结论。判据：${question.resolutionCriteria ?? "（未记录）"}`,
+            `/q/${question.id}`,
+            question.id,
+            ["needs-self-report"],
+          )
+        }
         return { mode: "requires-human-report" as const }
       }
 
-      const canSelfSettle =
-        question.oracleKind === "PUBLIC_FACT" && input.source !== undefined
-
-      if (canSelfSettle) {
+      if (decision.mode === "settle") {
         await handleQuestionResolution(
           question.id,
           input.resolution,
           question.type,
           undefined,
           // ADR-0004：自行结算必须携带可核查来源，因此来源要落库而非只进通知正文
-          { source: input.source, rationale: input.rationale },
+          {
+            source: input.source,
+            rationale: input.rationale,
+            // ADR-0031 §三：确认者是调用者本人（授权矩阵已在上面判定过）
+            confirmedByUserId: ctx.userId,
+          },
         )
         await notify(
           ctx.userId,
           "预测已自动结算",
-          `「${question.title}」结算为 ${input.resolution}。来源：${input.source}`,
+          `「${question.title}」结算为 ${input.resolution}。来源：${input.source ?? "（本人报告）"}`,
           `/q/${question.id}`,
           question.id,
           ["auto-resolved"],
@@ -420,18 +630,21 @@ export const agentRouter = router({
           proposedBy: "agent",
         },
       })
-      const downgraded = question.oracleKind === "PUBLIC_FACT"
       await notify(
         ctx.userId,
-        downgraded ? "结算提案（缺少来源）" : "结算提案待确认",
-        downgraded
+        decision.downgraded ? "结算提案（缺少来源）" : "结算提案待确认",
+        decision.downgraded
           ? `「${question.title}」建议结算为 ${input.resolution}，但未附来源，已降级为提案（ADR-0004）。`
           : `「${question.title}」建议结算为 ${input.resolution}，等待你确认。`,
         `/q/${question.id}`,
         question.id,
-        downgraded ? ["proposal", "missing-source"] : ["proposal"],
+        decision.downgraded ? ["proposal", "missing-source"] : ["proposal"],
       )
-      return { mode: "proposed" as const, proposalId: proposal.id, downgraded }
+      return {
+        mode: "proposed" as const,
+        proposalId: proposal.id,
+        downgraded: decision.downgraded,
+      }
     }),
 
   listProposals: ownedProcedure
@@ -450,7 +663,14 @@ export const agentRouter = router({
         where: {
           status: input?.status ?? "PENDING",
           ...(input?.questionId ? { questionId: input.questionId } : {}),
-          question: { userId: ctx.userId },
+          // ADR-0029：待我确认的提案包括**我押过注的**题——只按建题者过滤会让
+          // B（押注者）看不到等他确认的那条提案。
+          question: {
+            OR: [
+              { userId: ctx.userId },
+              { forecasts: { some: { userId: ctx.userId } } },
+            ],
+          },
         },
         include: { question: true },
         orderBy: { createdAt: "desc" },
@@ -462,14 +682,27 @@ export const agentRouter = router({
     .input(z.object({ proposalId: z.string(), accept: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
       const proposal = await prisma.resolutionProposal.findFirst({
-        where: { id: input.proposalId, question: { userId: ctx.userId } },
-        include: { question: true },
+        where: { id: input.proposalId },
+        include: { question: { include: { forecasts: true } } },
       })
       if (!proposal) {
         throw new TRPCError({ code: "NOT_FOUND", message: "找不到该提案" })
       }
       if (proposal.status !== "PENDING") {
         throw new TRPCError({ code: "BAD_REQUEST", message: "该提案已被处理" })
+      }
+      // ADR-0029：确认权属于**该预测的 Owner**，不属于建题者。
+      // A 建题、B 押注时，A 不能替 B 判定 B 的信念——这正是 ADR-0008 要防的事。
+      const isQuestionOwner = proposal.question.userId === ctx.userId
+      const ownsForecast = proposal.question.forecasts.some(
+        (f) => f.userId === ctx.userId,
+      )
+      if (!isQuestionOwner && !ownsForecast) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message:
+            "你不是这条预测的 Owner，也不是建题者：确认结算的权利属于在该题上押过注的人（ADR-0029）。",
+        })
       }
 
       if (input.accept && !proposal.question.resolved) {
@@ -479,7 +712,12 @@ export const agentRouter = router({
           proposal.question.type,
           undefined,
           // 提案里的证据随采纳一并成为结算证据
-          { source: proposal.source, rationale: proposal.rationale },
+          {
+            source: proposal.source,
+            rationale: proposal.rationale,
+            // ADR-0031 §三：确认这次结算的是接受提案的人
+            confirmedByUserId: ctx.userId,
+          },
         )
       }
 

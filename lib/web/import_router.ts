@@ -7,6 +7,7 @@ import prisma from "../prisma"
 import { importFromPredictionBook } from "./predictionbook"
 import { publicProcedure, router } from "./trpc_base"
 import { getCsvIdPrefix, getPredictionBookIdPrefix, hashString } from "./utils"
+import { normalizeDomainName } from "./domain_tags"
 import { log } from "../_log"
 
 export const importRouter = router({
@@ -122,13 +123,15 @@ export const importRouter = router({
             .filter((tag) => !!tag && tag.trim().length > 0)
             .map((name) => ({
               where: {
-                name_userId: {
-                  name: name.trim(),
+                nameNormalized_userId: {
+                  nameNormalized: normalizeDomainName(name),
                   userId: ctx.userId || "",
                 },
               },
               create: {
                 name: name.trim(),
+                // ADR-0030 §十二：判重折叠大小写；显示保留原样。
+                nameNormalized: normalizeDomainName(name),
                 user: {
                   connect: {
                     id: ctx.userId,

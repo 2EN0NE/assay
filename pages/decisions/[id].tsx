@@ -1,6 +1,7 @@
 import { NextSeo } from "next-seo"
 import Link from "next/link"
 import { useRouter } from "next/router"
+import { useState } from "react"
 import {
   RubricCompletion,
   RubricEntry,
@@ -10,6 +11,7 @@ import {
   rubricStatusOf,
 } from "../../lib/web/decision_rubric"
 import { api } from "../../lib/web/trpc"
+import { unscoredCauses } from "../../lib/web/settlement_scope"
 
 /**
  * 决策详情页（ADR-0001 / ADR-0019 · ticket 01）。
@@ -60,6 +62,11 @@ export default function DecisionPage() {
               value={decision.data.unknownInfo}
             />
 
+            <DomainsSection
+              decisionId={decision.data.id}
+              domains={decision.data.tags}
+            />
+
             <RevisionsSection revisions={decision.data.revisions} />
 
             {/* 复盘视图：决策时记录与最终结果**并排**（ticket 06）。
@@ -82,6 +89,139 @@ export default function DecisionPage() {
         )}
       </div>
     </>
+  )
+}
+
+/**
+ * 领域（ADR-0030）。
+ *
+ * 与 CLI 同规则：**补齐（原先无领域）自由，重标（改已标过的）需理由**。
+ * 理由栏在重标时必填不是界面礼貌，而是这条规则唯一的执行点——决策的领域
+ * 决定它与哪些经验可比，“随手改一下”等于让历史归属无声漂移。
+ *
+ * 未知领域由服务端大声拒绝（这里只把服务端的话原样显示出来），因为“帮你
+ * 改成差不多的名字”正是这条 ADR 要防的事。
+ */
+function DomainsSection({
+  decisionId,
+  domains,
+}: {
+  decisionId: string
+  domains: { id: string; name: string }[]
+}) {
+  const utils = api.useContext()
+  const vocabulary = api.tags.listDomains.useQuery()
+  const [draft, setDraft] = useState("")
+  const [reason, setReason] = useState("")
+
+  const addDomain = api.tags.addDomain.useMutation({
+    onSuccess: async () => {
+      await utils.tags.listDomains.invalidate()
+    },
+  })
+
+  const setDomains = api.tags.setDecisionDomains.useMutation({
+    onSuccess: async () => {
+      await utils.decision.byId.invalidate({ decisionId })
+      setDraft("")
+      setReason("")
+    },
+  })
+
+  const isRetag = domains.length > 0
+  const parsed = draft
+    .split(",")
+    .map((name) => name.trim())
+    .filter((name) => name !== "")
+  // “词表里没有”只是**显示**用的判断（不分大小写地比一下），权威仍在服务端：
+  // 真提交一个未知领域会被拒绝。这里先把它显出来，是为了给一个显式的“新建”动作，
+  // 而不是让用户对着拒绝信息猜该怎么办。
+  const unknown = parsed.find(
+    (name) =>
+      !(vocabulary.data ?? []).some(
+        (tag) => tag.name.toLowerCase() === name.toLowerCase(),
+      ),
+  )
+
+  return (
+    <section className="mt-8">
+      <h2 className="text-lg font-medium">领域</h2>
+
+      {isRetag ? (
+        <ul className="mt-2 flex flex-wrap gap-2">
+          {domains.map((tag) => (
+            <li key={tag.id} className="badge badge-outline">
+              {tag.name}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-2 text-sm text-neutral-400">
+          还没有领域。领域决定这条决策与哪些经验可比（ADR-0030）。
+        </p>
+      )}
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <input
+          className="input input-bordered input-sm"
+          list="known-domains"
+          placeholder="如 投资/宏观（逗号分隔可多个）"
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+        />
+        {/* 词表提示：未知领域会被服务端拒绝，先看见已有词就不容易造出"差不多的"新词。 */}
+        <datalist id="known-domains">
+          {vocabulary.data
+            ?.filter((tag) => tag.decisionCount > 0)
+            .map((tag) => <option key={tag.id} value={tag.name} />)}
+        </datalist>
+
+        {isRetag && (
+          <input
+            className="input input-bordered input-sm"
+            placeholder="重标理由（必填）"
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+          />
+        )}
+
+        <button
+          className="btn btn-sm"
+          disabled={
+            parsed.length === 0 ||
+            (isRetag && reason.trim() === "") ||
+            setDomains.isLoading
+          }
+          onClick={() =>
+            setDomains.mutate({
+              decisionId,
+              domains: parsed,
+              reason: reason.trim() === "" ? undefined : reason.trim(),
+            })
+          }
+        >
+          {isRetag ? "重标" : "补齐"}
+        </button>
+
+        {/* 造词的唯一入口（ADR-0030 §七）：必须是人按下这个按钮，而不是写入路径
+            顺手创建——否则“同名不同桶”会静默长出来。 */}
+        {unknown !== undefined && (
+          <button
+            className="btn btn-sm btn-ghost"
+            disabled={addDomain.isLoading}
+            onClick={() => addDomain.mutate({ name: unknown })}
+          >
+            新建领域「{unknown}」
+          </button>
+        )}
+      </div>
+
+      {setDomains.error && (
+        <div className="alert alert-warning mt-3 text-sm">
+          {setDomains.error.message}
+        </div>
+      )}
+    </section>
   )
 }
 
@@ -254,16 +394,18 @@ function PredictionsSection({
     title: string
     resolved: boolean
     resolution: string | null
+    /** ADR-0031：这次结算对这条预测的处境。推导值，不落库（§六 禁止状态表）。 */
+    settlementScope: "UNRESOLVED" | "DANGLING" | "EFFECTIVE"
+    /** §二/§三 要求的显示名；没有可挂的标签时为 null */
+    settlementLabel: string | null
     /** 逐条分数：取已存的 `QuestionScore` 值，`null` = 没有分数行（US16） */
     score: { absolute: number; relative: number | null } | null
   }[]
 }) {
   const resolvedCount = questions.filter((question) => question.resolved).length
-  // 已揭晓但**没有分数行**：判据判不出来（ADR-0018：AMBIGUOUS 不产生任何分数）。
-  // 它跟"未揭晓"必须显示得不一样，否则会被读成零损失 = 满分。
-  const unscored = questions.filter(
-    (question) => question.resolved && question.score === null,
-  ).length
+  // 两种成因分开说（ADR-0031 §二）：计数与理由都在 `unscoredCauses`（有单测守着）。
+  const { dangling: danglingUnscored, ambiguous: ambiguousUnscored } =
+    unscoredCauses(questions)
 
   return (
     <section>
@@ -284,9 +426,18 @@ function PredictionsSection({
         </p>
       )}
 
-      {unscored > 0 && (
+      {danglingUnscored > 0 && (
         <p className="mt-2 text-sm text-neutral-500">
-          {unscored} 条已揭晓但没有分数：判据判不出来时不产生分数（ADR-0018）。
+          {danglingUnscored}{" "}
+          条已揭晓但没有计入计量：结算是他人确认的，且没有可核查 来源（ADR-0031
+          §二）。补录来源后会自动生效（§五）。
+        </p>
+      )}
+
+      {ambiguousUnscored > 0 && (
+        <p className="mt-2 text-sm text-neutral-500">
+          {ambiguousUnscored}{" "}
+          条已揭晓但没有分数：判据判不出来时不产生分数（ADR-0018）。
           <b>空不等于 0 分</b>——那会给它满分。
         </p>
       )}
@@ -300,6 +451,11 @@ function PredictionsSection({
             </Link>
             {question.resolved && question.resolution !== null && (
               <span className="badge badge-sm">{question.resolution}</span>
+            )}
+            {question.settlementLabel && (
+              <span className="badge badge-sm badge-ghost">
+                {question.settlementLabel}
+              </span>
             )}
             {question.score && (
               <span className="text-xs text-neutral-500">

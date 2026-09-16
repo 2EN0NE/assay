@@ -73,6 +73,13 @@ jobs:
           # pi-lens-ignore: line-length
           DATABASE_DIRECT_URL: postgresql://fatebook:postgres@localhost:5432/fatebook_development
 
+      # 空库上的 `migrate deploy` 只证明“迁移能被应用”，不证明“**已有数据**的库升级后
+      # 数据是对的”。本次三条迁移各带一条回填（confirmedByUserId = 作者、nameNormalized
+      # = lower(name)）或一条约束收紧（Tag 唯一键），写错的后果都是**静默改写历史读数**
+      # ——那不会有任何其它测试变红。见 scripts/verify-migration-upgrade.ts。
+      - name: Verify migration upgrade path (with data)
+        run: npx tsx scripts/verify-migration-upgrade.ts
+
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 

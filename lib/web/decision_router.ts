@@ -1,4 +1,5 @@
 import { TRPCError } from "@trpc/server"
+import type { Prisma } from "@prisma/client"
 import { z } from "zod"
 import prisma from "../prisma"
 import {
@@ -17,7 +18,12 @@ import {
   validateRubricEntries,
 } from "./decision_rubric"
 import { ownedProcedure, router } from "./trpc_base"
+import {
+  propagateDecisionDomainsToQuestion,
+  resolveExistingDomains,
+} from "./domain_tags"
 import { missingRevisionReason, planNarrativeRevisions } from "./revisions"
+import { settlementLabelOf, settlementScopeOf } from "./settlement_scope"
 
 /**
  * 决策的过程（ADR-0001 / ADR-0019）。
@@ -105,19 +111,27 @@ function toNarrative(input: DecisionNarrativeInput): DecisionNarrative {
 
 export const decisionRouter = router({
   create: ownedProcedure
-    .input(narrativeInput)
+    .input(narrativeInput.extend({ domains: z.string().array().optional() }))
     .mutation(async ({ input, ctx }) => {
       // 先把校验/归一化跑完再落库：非法叙事不该留下任何痕迹。
       const narrative = toNarrative(input)
-      const created = await prisma.decision.create({
-        data: {
-          userId: ctx.userId,
-          ...narrative,
-          // ADR-0020 第四点：新建的决策记下它属于哪个决策版本。之后条目集合演进
-          // （新增 / 删除条目）不会改写它的分。
-          rubricVersion: CURRENT_RUBRIC_VERSION,
-        },
-      })
+      // ADR-0030 §七：未知领域大声失败（由此处解析），绝不静默造词。
+      const domains = input.domains?.length
+        ? await resolveExistingDomains(ctx.userId, input.domains)
+        : []
+      // 注意用 unchecked 变体：原写法给的是 `userId` 标量，checked 变体只认
+      // `user: { connect }`——注解选错变体会把一次纯新增变成一个改形状的重构。
+      const data: Prisma.DecisionUncheckedCreateInput = {
+        userId: ctx.userId,
+        ...narrative,
+        // ADR-0020 第四点：新建的决策记下它属于哪个决策版本。之后条目集合演进
+        // （新增 / 删除条目）不会改写它的分。
+        rubricVersion: CURRENT_RUBRIC_VERSION,
+      }
+      if (domains.length > 0) {
+        data.tags = { connect: domains.map((tag) => ({ id: tag.id })) }
+      }
+      const created = await prisma.decision.create({ data })
       return created
     }),
 
@@ -171,6 +185,8 @@ export const decisionRouter = router({
         // `QuestionScore`：同一条题可能有多个预测者，而复盘是当事人自己看的。
         include: {
           rubricEntries: true,
+          // ADR-0030：领域权威在 Decision，复盘时当然要看得到它。
+          tags: true,
           // 叙事改写的留痕必须在**复盘视图**里看得见，否则留痕没有意义
           // （ADR-0012 的 Consequences）。
           revisions: { orderBy: { createdAt: "asc" } },
@@ -187,7 +203,14 @@ export const decisionRouter = router({
         ...decision,
         questions: decision.questions.map((question) => {
           const { questionScores, ...rest } = question
-          return { ...rest, score: scoreOf(questionScores) }
+          return {
+            ...rest,
+            score: scoreOf(questionScores),
+            // ADR-0031 §二/§三：悬空必须**看得出来**，否则“没有计量”与“没有这条
+            // 预测”在复盘时不可区分。判定仍然只有 `settlementScopeOf` 一处。
+            settlementScope: settlementScopeOf(question, ctx.userId),
+            settlementLabel: settlementLabelOf(question, ctx.userId),
+          }
         }),
         // 完成度是推导值，不落库（ADR-0020）：落库的分值必然过期。
         // 分母取该决策**所属版本**的条目集合，而不是当前代码版本的——后者会让
@@ -239,6 +262,11 @@ export const decisionRouter = router({
         where: { id: question.id },
         data: { decisionId: decision.id },
       })
+
+      // ADR-0030 §三：**写时复制**——挂接那一刻该决策的领域被复制到这条预测上。
+      // §四：此后不再回头改它。历史样本按当时的归属解释，就像清单按当时的版本
+      // 解释（ADR-0020）一样——允许“顺手重标”就等于允许历史被无声改写。
+      await propagateDecisionDomainsToQuestion(decision.id, question.id)
 
       if (question.resolved) {
         // ADR-0020 第五点：挂上一条已结算的 Prediction 时立刻记下锁定时点，避免出现

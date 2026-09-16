@@ -32,8 +32,58 @@ export function forecastsAreHidden(
     }
   }
 
+  // ADR-0028 锚定保护：**多人题上，“提交前看不到他人的值”是默认行为**，
+  // 不需要建题人手动打开 hideForecastsUntilPrediction。
+  //
+  // 为什么不能只靠上面那个开关：共享题是常态（ADR-0025），而“忘记打开开关”本身
+  // 不报错——它只会让第二个 Owner 在押注前看到第一个人的数字，而**那正是这套
+  // 保护要防的唯一一件事**。单人自用不受影响：只有我一个预测者时无锚可防。
+  //
+  // 已结算的题在函数开头就返回了：复盘期一律可见（保护的是“提交前的独立性”，
+  // 不是“永远保密”）。
+  if (userId && hasMultipleForecasters(question)) {
+    if (!hasOwnForecast(question, userId)) {
+      return true
+    }
+  }
+
   // No hiding conditions met
   return false
+}
+
+export type QuestionWithMaybeOptions = {
+  forecasts: { userId: string }[]
+  options?: { forecasts?: { userId: string }[] | null }[] | null
+}
+
+/** 所有预测位置（直接押注 + 多选题选项）上的去重预测者。 */
+function distinctForecasterIds(question: QuestionWithMaybeOptions): string[] {
+  const direct = question.forecasts.map((f) => f.userId)
+  const optionForecasts = question.options?.flatMap(
+    (option) => option.forecasts?.map((f) => f.userId) ?? [],
+  )
+  return Array.from(new Set([...direct, ...(optionForecasts ?? [])]))
+}
+
+/**
+ * 多人题：有超过一个不同的预测者。
+ *
+ * 导出是因为**服务端脱敏**必须问同一个问题（`question_router` 的
+ * `scrubHiddenForecasts…`）：只在外层开闸、不在那里抹除，保护就降级成
+ * “界面不显示”——值仍在响应体里，第二次押注的人能从网络面板读到它。
+ */
+export function hasMultipleForecasters(
+  question: QuestionWithMaybeOptions,
+): boolean {
+  return distinctForecasterIds(question).length > 1
+}
+
+/** 我是否已经在这条题上押过（多选题上我的选择存在选项里，不在 question.forecasts）。 */
+function hasOwnForecast(
+  question: QuestionWithMaybeOptions,
+  userId: string,
+): boolean {
+  return distinctForecasterIds(question).includes(userId)
 }
 
 export function forecastHiddenReasonText(
@@ -48,7 +98,9 @@ export function forecastHiddenReasonText(
   if (question.hideForecastsUntilPrediction) {
     return "until you make a prediction"
   }
-  return ""
+  // ADR-0028：多人题上的锚定保护没有显式开关，所以走到这里就只可能是它。
+  // 返回空字符串会让界面只说“隐藏了”而不说“怎么才能看到”，而后者才是可行动的信息。
+  return "until you make a prediction"
 }
 
 export function getMostRecentForecastPerUser(
