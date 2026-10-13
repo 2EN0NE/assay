@@ -38,7 +38,7 @@
 - [x] `RecordProvenance.AGENT_INSTRUCTED`：schema + 迁移 + CLI + 面板文案
 - [x] 待触达队列语义写进 ADR-0017
 - [x] 索引：`Revision.questionId` / `ResolutionProposal.(questionId, status)` / `Notification.(userId, deliveryState)`
-- [x] `README.zh-CN.md` 同步（CLI 章节 + 测试数量）
+- [x] `README.zh-CN.md` 同步（CLI 章节 + 测试数量）——该文件其后被删除，README 改为中文单语
 
 ### 验证中发现并修复的额外缺陷（不在原审查清单内）
 

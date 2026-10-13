@@ -6,6 +6,6 @@
 
 **Status:** ready-for-agent
 
-- [ ] README / README.zh-CN / AGENTS.md 与新行为一致
+- [ ] README / AGENTS.md 与新行为一致
 - [ ] 01 的例外表与实现一致（无过期行）
 - [ ] CONTEXT.md 术语与实现一致
