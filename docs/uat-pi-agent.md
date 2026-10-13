@@ -201,14 +201,17 @@ $ domain-report --prefix 投资/交易水平
 
 ## 4. 常见故障
 
-| 现象                           | 原因                                              | 处理                                                              |
-| ------------------------------ | ------------------------------------------------- | ----------------------------------------------------------------- |
-| pi 里 skill 完全不生效         | 项目未被信任，或技能没安装                        | `./startup.sh` 重装；或 `pi --skill .agents/skills/<名>/SKILL.md` |
-| agent 报"没有可用身份"         | `.env` 里没有 `FATEBOOK_AGENT_API_KEY`            | 跑 `./startup.sh`，或 `init` 后把 key 写进 `.env`                 |
-| 迁移"成功"但目标库没表         | 只改了 `DATABASE_URL`，没改 `DATABASE_DIRECT_URL` | 两个都改（见 §0）                                                 |
-| `npm run dev` 打不开           | 它需要 `localhost.pem`（本仓库未提供）            | 用 `npm run dev:e2e` + `http://localhost:3000`                    |
-| Web 登录收不到信               | Mailpit 没起                                      | `docker compose up -d mail`，开 `http://localhost:8025`           |
-| `init` 建的账号在 Web 登不进去 | 它的邮箱是 `<label>@localhost`，收不到信          | 想两面同一个身份：Web 登录后在 `/api-setup` 复制 key 写进 `.env`  |
+| 现象                                                                                      | 原因                                                                                                             | 处理                                                                                                                     |
+| ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| pi 里 skill 完全不生效                                                                    | 项目未被信任，或技能没安装                                                                                       | `./startup.sh` 重装；或 `pi --skill .agents/skills/<名>/SKILL.md`                                                        |
+| agent 报"没有可用身份"                                                                    | `.env` 里没有 `FATEBOOK_AGENT_API_KEY`                                                                           | 跑 `./startup.sh`，或 `init` 后把 key 写进 `.env`                                                                        |
+| 迁移"成功"但目标库没表                                                                    | 只改了 `DATABASE_URL`，没改 `DATABASE_DIRECT_URL`                                                                | 两个都改（见 §0）                                                                                                        |
+| `npm run dev` 打不开                                                                      | 它需要 `localhost.pem`（本仓库未提供）                                                                           | 用 `npm run dev:e2e` + `http://localhost:3000`                                                                           |
+| Web 登录收不到信                                                                          | Mailpit 没起                                                                                                     | `docker compose up -d mail`，开 `http://localhost:8025`（邮件就在那儿）                                                  |
+| `/api-setup` 上找不到输入 key 的地方                                                      | 那一页是“登录后**给你** key”，不是让你粘贴                                                                       | 点 “Sign in to set up your API key”（**它是按钮**）→ 去 `http://localhost:8025` 点邮件里的链接 → 回来复制 “Your API key” |
+| 想让 agent 与网页是同一个身份                                                             | 方向只能是 **Web → CLI**：用网页的 key 喂 agent                                                                  | 把 `/api-setup` 上的 key 写进 `.env` 的 `FATEBOOK_AGENT_API_KEY`；再重跑 `./startup.sh` 给这个身份建词表（见下一行）     |
+| 换完 key 后 `list-domains` 空了、建决策报“未知领域”                                       | 领域词表是**按用户**存的（唯一键 `nameNormalized + userId`）                                                     | **重跑 `./startup.sh`**（幂等，会为新身份建那四个词），或手动 `add-domain` 四次                                          |
+| 用 `<label>@localhost` 登录网页报 **The e-mail could not be sent**（`error=EmailSignin`） | **登录邮箱的域名必须带点**（`init` 建的 `<label>@localhost` 因此永远登不了网页）——不是收不到信，是信**发不出去** | 别试这条；只能 Web → CLI。想造一个**两面都能用**的本地身份，用带点的邮箱：`FATEBOOK_AGENT_USER_EMAIL=you@fatebook.local` |
 
 ## 5. 结论：机制成立 vs 统计是否成立
 

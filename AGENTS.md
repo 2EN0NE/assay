@@ -27,7 +27,7 @@ This file provides context for AI agents operating in the Fatebook codebase.
 ### 4. Documentation Language Convention
 
 - **Authoritative documents** (like AGENTS.md) keep single language only
-- **Explanatory documents** (like README.md) may have bilingual versions
+- **Explanatory documents** (like README.md) may have bilingual versions — **this repo's `README.md` is Chinese-only** (the `README.zh-CN.md` mirror was deleted)
 - AI agent working language: follow user preference
 
 ### 5. Task Tracking with todo.md
@@ -954,3 +954,23 @@ npm run --silent agent -- list-due
 - **验证（两条，缺一不可）**：
   - `npm run --silent agent -- list-due | jq .` —— stdout 必须**可解析**。不加 `--silent` 时 npm 会把自己的横幅写进 stdout，同样破坏契约。
   - `npm run --silent agent -- --help >/dev/null` —— `--help` 必须走 stderr（stdout 字节数为 0）。
+
+## 本地身份的两种用法（正式 vs 验证账号）
+
+**先选身份，再动手**：两种身份的可用范围不同（见下表）。
+
+|          | 正式身份（推荐）                                                                               | 验证账号                                                                                                                 |
+| -------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| 怎么来   | 网页用**带点域名的邮箱**登录 → `/api-setup` 复制 key → 写进 `.env` 的 `FATEBOOK_AGENT_API_KEY` | `npm run --silent agent -- init --label <名> --allow-create-user`（建出 `<名>@localhost`）                               |
+| 能上网页 | ✅ 一个身份两条渠道（agent 写的，网页看得见、可背书）                                          | ❌ **永远不能**：域名不带点的地址在 NextAuth 发信前就被拒（`error=EmailSignin`，页面回 `The e-mail could not be sent.`） |
+| 适合     | 走完整回路、UAT、任何"人要看到数据"的场景                                                      | 纯 CLI 检查、脚本、迁移验证、e2e                                                                                         |
+
+**规则（按踩坑顺序）**
+
+1. **把网页账号的 key 交给 agent**（方向只有 Web → CLI）。不要用 `init` 建的 `<label>@localhost` 去登网页。
+2. **换身份后重跑 `./startup.sh`**。领域词表**按用户**存（`@@unique([nameNormalized, userId])`）；不重跑时 `create-decision --tags 投资/宏观` 会报“未知领域”。
+3. **本地 magic link 只会到 Mailpit**（<http://localhost:8025>），不进真邮箱。只要域名带点，填一个你并不拥有的地址也能登录。
+4. **想造"两面都能用"的本地身份**：用带点的地址（`FATEBOOK_AGENT_USER_EMAIL=you@fatebook.local`），别用 `init` 默认的 `<label>@localhost`。
+5. **判据（排查登录问题时用，别靠猜）**：
+   - 打一次登录接口看是哪种结局：`curl -s -c /tmp/cj http://localhost:3000/api/auth/csrf` 取 token，再 `POST /api/auth/signin/email`（带 `csrfToken` / `email` / `callbackUrl`）——落在 `verify-request` 是**发信成功**，落在 `error=EmailSignin` 是**地址被拒**。
+   - 想知道是"邮件层"还是"应用层"：直接对 Mailpit（`smtp://localhost:1025`）试投同一个地址。**Mailpit 收得下而应用报错 ⇒ 问题在地址校验，不在邮件服务。**
