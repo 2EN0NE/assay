@@ -1,4 +1,5 @@
 import { agentRouter } from "./agent_router"
+import { PAIRING_LOGIN_ENV } from "./pairing_flag"
 import prisma from "../prisma"
 
 // trpc-transformer 经 superjson 是 ESM，jsdom 下加载不了；直接调用过程不需要序列化。
@@ -42,6 +43,9 @@ jest.mock("../prisma", () => ({
       findFirst: jest.fn(),
       update: jest.fn(),
     },
+    // 配对码（ADR-0035）：过程层只负责判开关与委派，落库细节由
+    // `pairing_code_store.test.ts` 锁住。
+    pairingCode: { deleteMany: jest.fn(), create: jest.fn() },
   },
 }))
 
@@ -77,6 +81,10 @@ const questionFindFirst = (
 const proposalCreate = (
   prisma as unknown as { resolutionProposal: { create: jest.Mock } }
 ).resolutionProposal.create
+
+const pairingCodeCreate = (
+  prisma as unknown as { pairingCode: { create: jest.Mock } }
+).pairingCode.create
 
 const proposalFindFirst = (
   prisma as unknown as { resolutionProposal: { findFirst: jest.Mock } }
@@ -126,8 +134,29 @@ const propagateDecisionDomainsToQuestion = (
 
 type CallerInput = Parameters<typeof agentRouter.createCaller>[0]
 
+/**
+ * 持凭据的 CLI 调用方（ADR-0035）。`authentication` 必须显式给——签发配对码只看它，
+ * 默认缺省等于"谁也不是"，那会让本该允许的用例变成 FORBIDDEN。
+ */
 const asOwner = () =>
-  agentRouter.createCaller({ userId: "user-1" } as CallerInput)
+  agentRouter.createCaller({
+    userId: "user-1",
+    authentication: "credential",
+  } as CallerInput)
+
+/** 网页会话：任何已登录会话都能打到 `/api/trpc`，所以它**不是**凭据。 */
+const asWebSession = () =>
+  agentRouter.createCaller({
+    userId: "user-1",
+    authentication: "session",
+  } as CallerInput)
+
+/** 只设了 `FATEBOOK_AGENT_USER_EMAIL`：证明得了身份，证明不了「持有」。 */
+const asIdentitySelector = () =>
+  agentRouter.createCaller({
+    userId: "user-1",
+    authentication: "identity-selector",
+  } as CallerInput)
 
 const BASE = {
   title: "会在 6 月底前收到正式 offer",
@@ -960,5 +989,67 @@ describe("agent.recordResolutionSource —— 补录可核查来源（ADR-0031 �
         source: "https://example.org/evidence",
       }),
     ).rejects.toThrow(/找不到/)
+  })
+})
+
+/**
+ * ADR-0035：签发这一半"只有持有凭据者能做"。
+ *
+ * 例外登记在 ADR-0023，但 `/api/trpc` 把同一批过程也暴露给网页会话——所以开关必须
+ * 在**过程层**再判一次，不能靠"网页没调用它"。删掉这道判定时下面的用例变红；而
+ * "一个会话能凭空签发可转交的秘密"没有任何症状。
+ */
+describe("agent.issuePairingCode —— 开关在过程层也判（ADR-0035）", () => {
+  const ENV = PAIRING_LOGIN_ENV
+  const saved = process.env[ENV]
+
+  const restore = () => {
+    if (saved === undefined) delete process.env[ENV]
+    else process.env[ENV] = saved
+  }
+
+  afterEach(restore)
+
+  it("开关关闭 ⇒ FORBIDDEN，且一行都不落库", async () => {
+    delete process.env[ENV]
+
+    await expect(asOwner().issuePairingCode()).rejects.toThrow(/关闭/)
+
+    expect(pairingCodeCreate).not.toHaveBeenCalled()
+  })
+
+  it("开关打开 ⇒ 落到 store：返回明文码与 10 分钟后的到期时间", async () => {
+    process.env[ENV] = "1"
+    pairingCodeCreate.mockResolvedValue({} as never)
+
+    const issued = await asOwner().issuePairingCode()
+
+    expect(issued.code).toMatch(/^[2-9A-HJ-NP-Z]{8}$/)
+    expect(issued.expiresAt.getTime()).toBeGreaterThan(Date.now())
+    expect(pairingCodeCreate).toHaveBeenCalledTimes(1)
+  })
+  /**
+   * 这两条守的是 ADR-0035 第 18 行「只有**已经持有该身份凭据**的一方可签发」。
+   *
+   * 没有它们时，开关一开，任何已登录的网页会话都能经 `/api/trpc` 给自己签一枚码——
+   * 那扇门就能把自己续成新的 token，而 ADR-0023 登记表里的理由（"网页会话签发不了"）
+   * 会是一句假话。`FATEBOOK_AGENT_USER_EMAIL` 同理：它不含秘密。
+   */
+  it("开关打开，但调用方是**网页会话** ⇒ FORBIDDEN，不落库", async () => {
+    process.env[ENV] = "1"
+
+    await expect(asWebSession().issuePairingCode()).rejects.toThrow(/凭据/)
+
+    expect(pairingCodeCreate).not.toHaveBeenCalled()
+  })
+
+  it("开关打开，但调用方只有**身份选择器**（邮箱）⇒ FORBIDDEN，不落库", async () => {
+    process.env[ENV] = "1"
+
+    await expect(asIdentitySelector().issuePairingCode()).rejects.toThrow(
+      /凭据/,
+    )
+
+    expect(pairingCodeCreate).not.toHaveBeenCalled()
   })
 })

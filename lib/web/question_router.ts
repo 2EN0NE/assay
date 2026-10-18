@@ -380,6 +380,8 @@ export const questionRouter = router({
           {
             userId: user.id,
             session: null,
+            // OpenAPI 这一路拿的是真钥匙（`input.apiKey`），所以是凭据而不是会话。
+            authentication: "credential",
           },
         ),
         [

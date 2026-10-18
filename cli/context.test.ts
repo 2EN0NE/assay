@@ -1,3 +1,6 @@
+import os from "node:os"
+import path from "node:path"
+import fs from "node:fs"
 import { appRouter } from "../lib/web/app_router"
 import { getUserByApiKeyOrThrow } from "../lib/web/question_router"
 import prisma from "../lib/prisma"
@@ -53,6 +56,7 @@ async function captureError(run: () => Promise<unknown>): Promise<unknown> {
 
 beforeEach(() => {
   delete process.env.FATEBOOK_AGENT_API_KEY
+  delete process.env.FATEBOOK_AGENT_API_KEY_FILE
   delete process.env.FATEBOOK_AGENT_USER_EMAIL
   lookupByApiKey.mockResolvedValue(OWNER as never)
   userFindUnique.mockResolvedValue(OWNER as never)
@@ -60,6 +64,7 @@ beforeEach(() => {
 
 afterEach(() => {
   delete process.env.FATEBOOK_AGENT_API_KEY
+  delete process.env.FATEBOOK_AGENT_API_KEY_FILE
   delete process.env.FATEBOOK_AGENT_USER_EMAIL
 })
 
@@ -113,6 +118,7 @@ describe("createAgentSession —— 身份来源优先级（ADR-0026）", () => 
     expect(createCaller).toHaveBeenCalledWith({
       session: null,
       userId: "user-1",
+      authentication: "credential",
     })
   })
 })
@@ -162,6 +168,132 @@ describe("createAnonymousSession —— 只给「自己解决身份」的命令�
     expect(createCaller).toHaveBeenCalledWith({
       session: null,
       userId: undefined,
+      authentication: "none",
     })
+  })
+})
+
+describe("凭据文件 FATEBOOK_AGENT_API_KEY_FILE（ADR-0036）", () => {
+  const keyFile = path.join(
+    os.tmpdir(),
+    `fatebook-agent-key-${process.pid}.txt`,
+  )
+
+  afterEach(() => {
+    fs.rmSync(keyFile, { force: true })
+  })
+
+  it("从文件读出的钥匙立即可用，且末尾换行不算凭据的一部分", async () => {
+    fs.writeFileSync(keyFile, "file-key\n")
+    process.env.FATEBOOK_AGENT_API_KEY_FILE = keyFile
+
+    const session = await createAgentSession()
+
+    expect(lookupByApiKey).toHaveBeenCalledWith("file-key")
+    expect(session.credentialSource).toBe("api-key-file")
+  })
+
+  it("进程环境变量里的钥匙压过文件（显式覆盖优先，同 ADR-0036 的优先级）", async () => {
+    fs.writeFileSync(keyFile, "file-key\n")
+    process.env.FATEBOOK_AGENT_API_KEY_FILE = keyFile
+    process.env.FATEBOOK_AGENT_API_KEY = "env-key"
+
+    const session = await createAgentSession()
+
+    expect(lookupByApiKey).toHaveBeenCalledWith("env-key")
+    expect(session.credentialSource).toBe("api-key-env")
+  })
+
+  it("空串的 FATEBOOK_AGENT_API_KEY 是**显式压制**：此时不再去看文件、回退到邮箱", async () => {
+    // e2e 的邮箱用例正是靠这一条（dotenv 不覆盖已存在的键，空串能挡住 `.env` 里的值）。
+    fs.writeFileSync(keyFile, "file-key\n")
+    process.env.FATEBOOK_AGENT_API_KEY_FILE = keyFile
+    process.env.FATEBOOK_AGENT_API_KEY = ""
+    process.env.FATEBOOK_AGENT_USER_EMAIL = "owner@example.com"
+
+    const session = await createAgentSession()
+
+    expect(lookupByApiKey).not.toHaveBeenCalled()
+    expect(userFindUnique).toHaveBeenCalledWith({
+      where: { email: "owner@example.com" },
+    })
+    expect(session.credentialSource).toBe("email-env")
+  })
+
+  it("文件读不到 ⇒ 当场报错，**不**静默回退到邮箱（那会变成另一个身份）", async () => {
+    process.env.FATEBOOK_AGENT_API_KEY_FILE = path.join(
+      os.tmpdir(),
+      "definitely-missing-key-file.txt",
+    )
+    process.env.FATEBOOK_AGENT_USER_EMAIL = "owner@example.com"
+
+    const error = await captureError(() => createAgentSession())
+
+    expect(error).toBeInstanceOf(CliError)
+    expect((error as CliError).message).toMatch(/读不到凭据文件/)
+    expect(userFindUnique).not.toHaveBeenCalled()
+    expect(createCaller).not.toHaveBeenCalled()
+  })
+
+  it("文件是空的（只有空白）⇒ 同样是硬失败，不当成「没设」", async () => {
+    fs.writeFileSync(keyFile, "   \n")
+    process.env.FATEBOOK_AGENT_API_KEY_FILE = keyFile
+
+    const error = await captureError(() => createAgentSession())
+
+    expect(error).toBeInstanceOf(CliError)
+    expect((error as CliError).message).toMatch(/凭据文件是空的/)
+    expect(lookupByApiKey).not.toHaveBeenCalled()
+  })
+
+  it("路径是空白 ⇒ 与 `FATEBOOK_AGENT_API_KEY=\"\"` 同语义（显式压制），不是「去读一个叫 '' 的文件」", async () => {
+    // 服务单元模板里留空一个可选路径是常事；那不该变成一个看不出原因的错误。
+    process.env.FATEBOOK_AGENT_API_KEY_FILE = "   "
+    process.env.FATEBOOK_AGENT_USER_EMAIL = "owner@example.com"
+    userFindUnique.mockResolvedValue(OWNER as never)
+
+    const session = await createAgentSession()
+
+    expect(session.credentialSource).toBe("email-env")
+    expect(lookupByApiKey).not.toHaveBeenCalled()
+    expect(userFindUnique).toHaveBeenCalledWith({
+      where: { email: "owner@example.com" },
+    })
+  })
+})
+
+/**
+ * 调用方认证种类（ADR-0035）：`ctx.authentication` 决定"这条命令有没有凭据"。
+ *
+ * 签发配对码只认 `credential`。把这条映射放错的后果**没有症状**：一条只设了邮箱的
+ * 进程会安静地拿到签发权，而 ADR 里「只有持有凭据的一方可签发」变成一句注释。
+ */
+describe("createAgentSession —— 调用方认证种类（ADR-0035）", () => {
+  it("持钥匙 ⇒ credential（三种来源都是）", async () => {
+    process.env.FATEBOOK_AGENT_API_KEY = "env-key"
+
+    await createAgentSession()
+
+    expect(createCaller).toHaveBeenCalledWith(
+      expect.objectContaining({ authentication: "credential" }),
+    )
+  })
+
+  it("只有邮箱 ⇒ identity-selector：它证明身份，不证明持有", async () => {
+    process.env.FATEBOOK_AGENT_USER_EMAIL = "owner@example.com"
+
+    await createAgentSession()
+
+    expect(createCaller).toHaveBeenCalledWith(
+      expect.objectContaining({ authentication: "identity-selector" }),
+    )
+  })
+
+  it("匿名（init）⇒ none：那一刻确实还没有身份", () => {
+    createAnonymousSession()
+
+    expect(createCaller).toHaveBeenCalledWith(
+      expect.objectContaining({ authentication: "none" }),
+    )
   })
 })

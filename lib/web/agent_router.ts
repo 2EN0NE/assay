@@ -9,7 +9,9 @@ import { decideSettlement } from "./settlement_authority"
 import { danglingReason, isDangling } from "./settlement_scope"
 import { untaggedDecisionWhere } from "./domain_tags"
 import { handleQuestionResolution, rescoreResolvedQuestion } from "./resolution"
-import { ownedProcedure, router } from "./trpc_base"
+import { credentialProcedure, ownedProcedure, router } from "./trpc_base"
+import { issuePairingCode } from "./pairing_code_store"
+import { PAIRING_LOGIN_ENV, isPairingLoginEnabled } from "./pairing_flag"
 
 /**
  * Agent 面向的过程（见 ADR-0015）。
@@ -774,4 +776,22 @@ export const agentRouter = router({
         },
       })
     }),
+
+  /**
+  /**
+   * 签发一次性配对码（ADR-0035）：把"我已经持有这个身份的凭据"换成"这个浏览器也能
+   * 用这个身份"。界面上只有 CLI，但 `/api/trpc` 把同一批过程也暴露给网页会话——
+   * 所以「只有持有凭据者能签发」由 `credentialProcedure`（凭据 vs 会话 vs 身份选择器）
+   * 在过程层落实，而不是靠"网页没调用它"。开关再判一次：关着签出来的码兑不了。
+   * 这是登记在 ADR-0023 的有意例外（`cli/parity.test.ts` 的例外表）。
+   */
+  issuePairingCode: credentialProcedure.mutation(({ ctx }) => {
+    if (!isPairingLoginEnabled(process.env)) {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: `配对码登录当前是关闭的（${PAIRING_LOGIN_ENV}=1 并重启 Web 服务才开；ADR-0035）`,
+      })
+    }
+    return issuePairingCode(ctx.userId)
+  }),
 })

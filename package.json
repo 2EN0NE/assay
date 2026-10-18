@@ -19,7 +19,7 @@
     "test": "LC_ALL=en-US jest",
     "test:coverage": "LC_ALL=en-US jest --coverage",
     "test:e2e": "playwright test",
-    "dev:e2e": "NEXTAUTH_URL=http://localhost:3000/api/auth HOST_URL=http://localhost:3000 dotenv next dev -- -p 3000",
+    "dev:e2e": "FATEBOOK_ENABLE_PAIRING_LOGIN=1 NEXTAUTH_URL=http://localhost:3000/api/auth HOST_URL=http://localhost:3000 dotenv next dev -- -p 3000",
     "startup": "bash startup.sh",
     "agent": "dotenv -e .env -- tsx cli/index.ts",
     "typecheck": "tsc --noEmit"

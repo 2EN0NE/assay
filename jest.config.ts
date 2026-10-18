@@ -129,6 +129,42 @@ const config: Config = {
       lines: 80,
       statements: 80,
     },
+    // 网页的第二扇门（ADR-0035）与身份赋值（ADR-0036）：这一层错了**没有症状**——
+    // 门比设计的更宽（远端可兑换、码可复用）或更窄（开关读错）时，页面照转、测试
+    // 照绿。门槛取 80 只为拦住"用例被删/改坏"，不追数字（留 5pp 以上余量：
+    // `redeem.ts` 的 branches 实测 81%，故取 75）。
+    "./lib/web/pairing_code.ts": {
+      branches: 80,
+      functions: 80,
+      lines: 80,
+      statements: 80,
+    },
+    "./lib/web/pairing_code_store.ts": {
+      branches: 80,
+      functions: 80,
+      lines: 80,
+      statements: 80,
+    },
+    "./lib/web/pairing_flag.ts": {
+      branches: 80,
+      functions: 80,
+      lines: 80,
+      statements: 80,
+    },
+    "./lib/web/session_cookie.ts": {
+      branches: 80,
+      functions: 80,
+      lines: 80,
+      statements: 80,
+    },
+    // 兑换端点**本身**（不是它的纯函数）：四道门接没接在链上，只有这里能守住。
+    // e2e 分不出来——它本来就在 localhost 上跑，删掉回环检查它照样绿。
+    "./pages/api/pairing/redeem.ts": {
+      branches: 75,
+      functions: 80,
+      lines: 80,
+      statements: 80,
+    },
   },
   testEnvironment: "jsdom",
 }

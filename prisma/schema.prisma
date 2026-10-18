@@ -208,6 +208,7 @@ model User {
   notifications            Notification[]
   questionOptions          QuestionOption[] @relation("author")
   decisions                Decision[]
+  pairingCodes             PairingCode[]
 
   // Used by next-auth:
   emailVerified DateTime?
@@ -501,4 +502,20 @@ model DecisionRubricEntry {
 enum RubricItemStatus {
   DONE
   NOT_DONE
+}
+
+/// 一次性配对码（ADR-0035）：由**持有该身份凭据**的一方签发，在实例本机把它换成
+/// 该身份的网页会话。三条性质由字段本身表达，不靠约定：
+/// 一次有效 = `usedAt`，短时效 = `expiresAt`，不落明文 = `codeHash`。
+model PairingCode {
+  id        String    @id @default(cuid())
+  /// 归一化后码的 sha256（明文只在签发那一刻打印，之后无处可查）
+  codeHash  String    @unique
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  usedAt    DateTime?
+
+  @@index([userId])
 }

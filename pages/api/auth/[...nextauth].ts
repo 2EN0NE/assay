@@ -10,6 +10,12 @@ import {
 import { backendAnalyticsEvent } from "../../../lib/_utils_server"
 import prisma from "../../../lib/prisma"
 import { log } from "../../../lib/_log"
+import {
+  secureCookiesEnabled,
+  sessionCookiePrefix,
+  sessionCookieSameSite,
+  sessionTokenCookie,
+} from "../../../lib/web/session_cookie"
 import { subscribeToMailingListSafely } from "../../../lib/web/mailing_list"
 
 function getCookies() {
@@ -18,20 +24,15 @@ function getCookies() {
     https://github.com/nextauthjs/next-auth/blob/c0f9af4c567a905c9d55b732cc0610d44fbae5a6/packages/next-auth/src/core/init.ts#L77
   */
 
-  const useSecureCookies = process.env.NODE_ENV === "production"
-  const cookiePrefix = useSecureCookies ? "__Secure-" : ""
-  const sameSite = useSecureCookies ? ("none" as "none") : ("lax" as "lax")
+  // 判据也只有一处：cookie 名与选项都由它派生，写两遍就会分家而没有症状。
+  const useSecureCookies = secureCookiesEnabled()
+  const cookiePrefix = sessionCookiePrefix(useSecureCookies)
+  const sameSite = sessionCookieSameSite(useSecureCookies)
 
   return {
-    sessionToken: {
-      name: `${cookiePrefix}next-auth.session-token`,
-      options: {
-        httpOnly: true,
-        sameSite,
-        path: "/",
-        secure: useSecureCookies,
-      },
-    },
+    // 会话 cookie 的名字与选项只有一处定义：配对码兑换（ADR-0035）必须写入
+    // **同一个** cookie，否则"登录成功"与"NextAuth 认得出你"会分家而没有症状。
+    sessionToken: sessionTokenCookie(useSecureCookies),
     callbackUrl: {
       name: `${cookiePrefix}next-auth.callback-url`,
       options: {
@@ -156,7 +157,7 @@ export const authOptions: NextAuthOptions = {
   jwt: {
     secret: process.env.SECRET,
   },
-  useSecureCookies: process.env.NODE_ENV === "production",
+  useSecureCookies: secureCookiesEnabled(),
 
   cookies: getCookies(),
 

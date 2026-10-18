@@ -11,10 +11,19 @@ import {
   requireDate,
   requireString,
 } from "./args"
-import type { CredentialSource } from "./context"
+import { isCredentialSource } from "./credential_source"
+import type { CredentialSource } from "./credential_source"
+// 唯一的例外：一个**没有副作用**的叶子模块（只 import node:crypto）。配对开关的
+// 判定必须与 Web 侧共用同一处定义，而它不碰 prisma / next，所以不会把
+// appRouter 的运行时依赖链拽进来。
+import {
+  PAIRING_LOGIN_ENV,
+  isPairingLoginEnabled,
+} from "../lib/web/pairing_flag"
 
 /**
- * 只用类型导入：测试可以注入假 caller，不触发 appRouter 的运行时依赖链。
+ * 运行时导入只有一个**无副作用的叶子模块**（`lib/web/pairing_flag`，见下方注释）：
+ * 其余一律类型导入，测试才能注入假 caller 而不触发 appRouter 的运行时依赖链。
  *
  * 这里刻意从 `appRouter` 而不是 `agentRouter` 提取类型——tRPC 的嵌套 caller
  * 在挂载到父路由时会重新装饰，两者类型实例不等价（TS2719）。从实际调用点
@@ -438,6 +447,36 @@ export const commands: Command[] = [
       credentialSource,
     }),
   },
+
+  {
+    name: "issue-pairing-code",
+    summary:
+      "签发一次性配对码：在本机浏览器把它换成该身份的网页会话（ADR-0035；默认关闭）",
+    usage: "issue-pairing-code",
+    // 三道检查，每一道都有理由：
+    // 1. **凭据**（ADR-0035）：签发是"持有凭据者"的动作。`FATEBOOK_AGENT_USER_EMAIL`
+    //    只是身份选择器（不含秘密，谁设了都能以该身份跑命令），签不了码。过程层的
+    //    `credentialProcedure` 是真正的门禁；这里这一次只为给出可读的提示。
+    // 2. **开关**：关着的时候签出来的码兑不了，而人要到浏览器里才发现。
+    // 3. 过程层还会再判一次同两个判据——那一层是为 `/api/trpc`（网页会话也能打）准备的。
+    // 各层共用同一份定义（`lib/web/{pairing_flag,context}`），不各自猜。
+    run: async (_args, { agent, credentialSource }) => {
+      if (!isCredentialSource(credentialSource)) {
+        throw new CliError(
+          "签发配对码要求持有凭据（API key）",
+          "FATEBOOK_AGENT_USER_EMAIL 只是身份选择器，不含秘密，证明不了「持有」（ADR-0021 / ADR-0035）。用 `whoami` 看当前来源；改成 FATEBOOK_AGENT_API_KEY 或 FATEBOOK_AGENT_API_KEY_FILE 再签发。",
+        )
+      }
+      if (!isPairingLoginEnabled(process.env)) {
+        throw new CliError(
+          "配对码登录当前是关闭的",
+          `在 .env 里设 ${PAIRING_LOGIN_ENV}=1 并重启 Web 服务。它默认关闭是刻意的（ADR-0035）：不能由 NODE_ENV 推断。`,
+        )
+      }
+      const issued = await agent.issuePairingCode()
+      return { ...issued, redeemUrl: pairingRedeemUrl(process.env) }
+    },
+  },
   {
     name: "init",
     summary: "建一个新身份并打印其凭据（不需要邮件；ADR-0022）",
@@ -458,4 +497,16 @@ export const commands: Command[] = [
 
 export function findCommand(name: string): Command | undefined {
   return commands.find((command) => command.name === name)
+}
+
+/**
+ * 兑换页的地址——人下一步要打开的那一页。基址取 `HOST_URL`（仓库里既有的"网页基址"），
+ * 本地默认 `http://localhost:3000`。**不**回退到 `NEXTAUTH_URL`：它指向 `/api/auth`，
+ * 不是站点根，拼出来的链接会 404。
+ */
+export function pairingRedeemUrl(
+  env: Record<string, string | undefined>,
+): string {
+  const base = env.HOST_URL?.trim() || "http://localhost:3000"
+  return `${base.replace(/\/+$/, "")}/pair`
 }

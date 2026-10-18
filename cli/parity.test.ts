@@ -50,6 +50,11 @@ const PROJECT_ROOT = path.resolve(__dirname, "..")
  * （这正是 `docs/issues/attribution-and-parity/01-parity-gate-test.md` 的验收方式）。
  */
 const DELIBERATE_EXCEPTIONS: ReadonlyMap<string, string> = new Map([
+  // —— 明确只能在一侧：配对码由**持有凭据者**签发，而网页侧持有的是会话（ADR-0035）
+  [
+    "agent.issuePairingCode",
+    "只可能在一侧：签发是**持有凭据者**的动作，网页侧拿到的是会话、不持有凭据（ADR-0035）。兑换那一半在 Web——`/pair` 页面 + `pages/api/pairing/redeem`（不是 tRPC 过程，因此不进这张表）",
+  ],
   // —— 能力在 Web 上以界面形态存在，对等物不经 agent.* 命名空间（形态不同 ≠ 能力缺失）
   [
     "agent.createPrediction",
