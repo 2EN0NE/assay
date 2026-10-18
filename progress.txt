@@ -421,3 +421,103 @@
 ### 本轮七项裁决的共同教训
 - **先核事实再下结论**：七项里有 **3 项**（①④⑤→ 其中 ① 是"我读错 ADR"、④ 是"投影没有真重复"、⑦ 是"并非无票据"）在我查证后**改变了原来的判断**。复查报告与我的复述都可能不全对——**每条都要回到代码/数据/CI 去核**。
 - 查证手段很有用：**真库 SQL**（悬空却带分数的行数）、**git 身份**（未跟踪 vs 已提交，判断"这是谁的产物"）、**CI 配置**（判断"这道门禁到底守没守"）。
+
+## Session: 2026-10-13（实现 ADR-0035 / ADR-0036）
+
+### Completed
+
+- ADR-0035 全方位落地：`PairingCode` 表 + 迁移（只存 codeHash）、纯规则 `pairing_code.ts` / 开关 `pairing_flag.ts`、落库 `pairing_code_store.ts`（原子领取）、过程 `agent.issuePairingCode` + CLI `issue-pairing-code`、兑换端点 `pages/api/pairing/redeem.ts` + 页面 `pages/pair.tsx`
+- 会话 cookie 抽成单一定义处 `lib/web/session_cookie.ts`，`pages/api/auth/[...nextauth].ts` 与兑换端点共用（配对码兑出来的是同一个会话）
+- ADR-0036：`FATEBOOK_AGENT_API_KEY_FILE`（flag > KEY > KEY_FILE > email；空串 = 显式压制）
+- 门禁与文档同步：`cli/parity.test.ts` 例外登记、ADR-0023 登记表两行、ADR-0035 实现注记、README / AGENTS.md / .env.example / docs/uat-pi-agent.md / e2e/README.md / CLI --help
+- 验证：typecheck / lint / test:coverage（410 passed，新增 4 个模块 80% 门槛）/ next build / e2e（新用例通过）/ 真库 migrate deploy + `\d "PairingCode"`
+
+### Key Decisions
+
+- Decision: 用**自建 API 端点**兑换，而不是 NextAuth 的 CredentialsProvider
+- Rationale: ADR-0035 的「只在实例本机」需要 `req.socket.remoteAddress`；CredentialsProvider 的 `authorize` 拿不到它，只能信可伪造的 header
+- Decision: loopback 判定同时看**连接地址**与**Host 主机名**
+- Rationale: 只看前者时，任何反代（本仓库 `npm run dev` 自己就挂了 local-ssl-proxy）都会让远端来客以 127.0.0.1 出现，门对整个内网开着且无任何症状
+- Decision: 码只存 sha256 哈希 + 一次有效靠带条件 `updateMany`
+- Rationale: 先查再改会让并发两次兑换双双成功，且不会有症状
+- Decision: 开关拆到零 `node:` 依赖的 `pairing_flag.ts`
+- Rationale: 见下面的教训——页面不能间接 import `node:crypto`
+
+### Lessons Learned
+
+- **`pages/` 下的模块会被打进客户端 bundle**：`pages/pair.tsx` 只在 `getServerSideProps` 里用 `pairing_code.ts`，但 webpack 仍为客户端那份打包它，`node:crypto` 直接让整页变成 Build Error，而 tsc / eslint / 单测全绿。只有 `npx next build`（或 e2e）看得见。已写进 AGENTS.md 的验证分层表。
+- **对源码做文本断言要防注释**：新加的「零 node: 依赖」断言用 `/from\s+"node:/` 命中的是模块注释里那句报错原文（自己撞了一次），改成只匹配真的 import 行（`/^\s*import[^\n]*from\s+"node:/m`）。
+- **Playwright 的 `reuseExistingServer: true` 会复用上个会话遗留的 dev server**：实测一个 Sep 16 起的 next-server 占着 :3000，它的 env 里没有本次要用的开关，表现为"页面根本不显示表单"。跑 e2e 前先确认 `lsof -nP -iTCP:3000 -sTCP:LISTEN` 是空的。
+- pi-lens 在 `prisma generate` 之后仍会持有陈旧快照（错误文本里带 `never` 的那个 `PrismaClient<..., never, ...>`）。判定走 AGENTS.md 的三条：文件在 tsc 的 program 内 + `tsc --noEmit` 干净 + `grep -c pairingCode node_modules/.prisma/client/index.d.ts` 有值；这次还补了一条运行时探针（`new PrismaClient().pairingCode.deleteMany` 是 function）。**不要改代码迎合它**。
+
+### Next Steps
+
+- 待用户决定（本轮**未擅自改**）：`e2e/agent-cli.spec.ts` 的「未量化」用例有一条早已失效的断言（`--stated-by-owner` ⇒ provenance HUMAN ⇒ `AgentRecordPanel` 整块不渲染），连带暴露 ADR-0011「未量化必须可见」在人建题上并未覆盖。详见 `todo.md`。
+- 用户自己的 UAT 仍可跑：`docs/uat-pi-agent.md`；配对码 UAT 步骤见 README「网页的第二扇门」。
+
+## Session: 2026-10-13（修复配对码审查发现）
+
+### Completed
+
+- **P2 跨站表单确实能到达兑换端点**：Next 的默认 body 解析对 urlencoded 走 `querystring.decode`（对象，不是字符串），原注释的否决理由不成立。`pages/api/pairing/redeem.ts` 现在显式要求 `application/json`（415），且**不记失败**——否则别人网页上一个自动提交的表单就能把 5 次额度用光、锁死本机用户 10 分钟。
+- **P2 端点的四道门没有回归保护**：新增 `lib/web/pairing_redeem_handler.test.ts`（12 例，直接调 handler），并给 `pages/api/pairing/redeem.ts` 加覆盖率门槛。**自证**：把 `isLocalRequest` 判定短路成 `false && …`，3 个用例变红；e2e 分不出来（它本来就在 localhost 上跑）。
+- **P3** `useSecureCookies` 的判据也收敛进 `lib/web/session_cookie.ts`（`secureCookiesEnabled()`），`[...nextauth].ts` 与兑换端点共用；`FATEBOOK_AGENT_API_KEY_FILE=""` 与 `FATEBOOK_AGENT_API_KEY=""` 同语义（压制，不再抛「读不到凭据文件：」）；`issuePairingCode` 清理**所有已过期**的行（原来只清未用的，等于每次签发留一条永久记录）；`agent.issuePairingCode` 在**过程层**也校验开关（`/api/trpc` 把同一批过程暴露给网页会话）；两处注释里指错的 `lib/web/pairing_code` 改为 `pairing_flag`。
+- 文档同步：ADR-0035 实现注记（签发/兑换/只收 JSON/过期清理）、ADR-0023 例外行、README 的「五条限制」。
+
+### Lessons Learned
+
+- **「到不了这里」这类注释要当断言验证**：`querystring.decode` 一行代码就推翻了它，而信它的人会顺手省掉 CSRF 防护。判据要看依赖的实际实现（`node_modules/next/dist/server/api-utils/node/parse-body.js`），不是直觉。
+- **安全门的单测要放在"门的调用点"**：纯函数全绿 + e2e 本机全绿，删掉 handler 里的回环判定依然全绿——变红要靠直接调 handler 的用例。
+- 拒绝请求时是否记失败额度也是一处设计：把「别人能触发的请求」计入限流，等于把限流本身变成攻击面。
+
+### Next Steps
+
+- 无（本轮改动已跑 `typecheck` / `lint` / `test:coverage`：425 passed）。
+
+## Session: 2026-10-17（按双轴评审结论修正 ADR-0035/0036）
+
+### Completed
+
+- 签发配对码改为**只认凭据**：`lib/web/context.ts` 新增 `Authentication`
+  （`session` / `credential` / `identity-selector` / `none`），`trpc_base.ts` 新增
+  `credentialProcedure`，`agent_router.issuePairingCode` 改用它。网页会话（含配对码
+  换来的那一个）与只设 `FATEBOOK_AGENT_USER_EMAIL` 的进程都会 `FORBIDDEN`。
+- 配对码会话改成**会话 cookie**（`serializeSessionCookie({ expiresAt? })` 不写 `Expires`），
+  与邮件门一致；`SESSION_COOKIE_MAX_AGE_SECONDS` → `SESSION_TOKEN_MAX_AGE_SECONDS`（它是 JWT 寿命）。
+- cookie 前缀 / `SameSite` 单点化（`sessionCookiePrefix` / `sessionCookieSameSite`），
+  `getCookies()` 从它派生。
+- `cli/context.ts` 的凭据解析收成 `resolveApiKey` 一次返回 `{ key, source }`；
+  类型 + `isCredentialSource` 拆到 `cli/credential_source.ts`（叶子模块）。
+- 文档：ADR-0035 去掉「收窄 ADR-0021」的伪声明、三处行号改符号引用、实现注记重写；
+  ADR-0023 登记理由改成真话并登记「不进 SKILL.md 是有意的缺席」；ADR-0036 声明重开了
+  ADR-0021 对「用户级凭据文件」的否决；CONTEXT.md 新增 `Identity Selector / 身份选择器`；
+  README / AGENTS.md / uat 文档 / verification.md 同步。
+- 验证：typecheck / lint / test:coverage（438 passed）/ next build / e2e pairing 全绿；
+  真库实测：邮箱路径 exit=1 并提示「要求持有凭据」，凭据路径正常出码。
+
+### Key Decisions
+
+- **签发要求真凭据**（不放宽文档）：让 ADR-0035「只有持有该身份凭据的一方可签发」成为可核对的事实。
+  代价：只配 `FATEBOOK_AGENT_USER_EMAIL` 的进程签不出码——这是有意的，因为那不是秘密。
+- **不发明持久性**：cookie 不给 `Expires`。实测 curl 罐子对 `expiry=0` 的 cookie 照样送回，
+  所以「agent 要长期可用」不依赖 `Expires`，需要的是保存 jar 文件。
+- **`verification.md` 的历史 `[x]` 不改字**，只追加带日期的注记（改写历史记录与「当时快照」的定位冲突）。
+
+### Lessons Learned
+
+- **「两处各写一遍」是会静默分家的**：cookie 前缀 / sameSite 曾有两份，`Expires` 也只有一处决定——
+  把判据、名字、选项收进同一个模块后，`session_cookie.test.ts` 才能断言三者同源。
+- **纯规则别放在会 import prisma 的模块里**：把 `isCredentialSource` 留在 `cli/context.ts`，
+  `cli/commands.test.ts` 立刻炸在 `PrismaClient is unable to run in this browser environment`。
+  同 `lib/web/pairing_flag.ts` 的教训再次出现——叶子模块是必要的基础设施，不是洁癖。
+- **`as` 类型断言会让"编译器逼每个构造点表态"失效**：10 个测试文件写 `{ userId } as CallerInput`，
+  只有生产构造点（`const ctx: Context = …`）被 tsc 抓住。设计强制力时要数清哪些地方有 `as`。
+- **ADR 的「已做完」必须带可重跑的判据**：`grep -rn "永远登不进\|永远不能登录" README.md AGENTS.md`
+  比一句"已改写"有用；而 `git show <较早 commit>` 取错证据点会得出相反结论（评审里出现过一次误报）。
+
+### Next Steps
+
+- 可选门禁：`lib/doc_references.test.ts` 禁止 `docs/` 里出现 `file.ts:NN` / `第 N 行`（现在只有 0 处，最便宜的时刻）。
+- `e2e/agent-cli.spec.ts` 的「未量化的命题是合法状态」仍是红的（与本次改动无关，见上一轮记录）。
+- `npm run dev:e2e` 把开关只给了 Web 进程，CLI 读 `.env` —— 已在 `docs/uat-pi-agent.md` 的故障表登记，
+  但更彻底的做法是让 `dev:e2e` 不再自带该变量（要求两侧都从 `.env` 读）。

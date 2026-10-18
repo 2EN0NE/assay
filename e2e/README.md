@@ -36,6 +36,8 @@ npx playwright install chromium
 
 所以 `dev:e2e` 把两个变量钉成 `http://localhost:3000`（`dotenv` 不覆盖已存在的环境变量，因此内联赋值有效）。改 `dev:e2e` 时不要把它去掉。
 
+同一个 `dev:e2e` 还**显式打开**了 `FATEBOOK_ENABLE_PAIRING_LOGIN=1`（默认关闭，ADR-0035）。`e2e/pairing-login.spec.ts` 测的就是那扇门：CLI 签发一次性码 → 浏览器兑换 → `/api/auth/session` 能读出这个身份。它的 CLI 一侧也自带这个变量——**两侧都开**才算通过，只开一侧的表现是"页面说登录成功、会话却是空的"或"页面根本不显示表单"。
+
 > **已知不稳定（缓解与排查入口见文末 Notes）**：整套跑时曾出现一次 `修订历史` 用例超时。
 
 ## Run

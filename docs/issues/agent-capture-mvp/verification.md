@@ -73,3 +73,5 @@ pi-lens 的 TS server 持有 `@prisma/client` 的**陈旧快照**，持续误报
 | 08 调度与触达     | 单测覆盖状态机                                               | ✅ `agent_router.test.ts` 新增 5 条：PENDING 过滤 / DELIVERED 记时间与通道 / 未给通道时 in-app / NOT_NEEDED 清空 / 非本人通知拒绝                                                                                                                                                                                             |
 
 > **e2e 后来已在本机执行**：`npx playwright install chromium` 在本机拉不到 CDN，改用系统 Edge（同为 Chromium 内核）跑通，CI 仍用 chromium（见 README 的 "How to verify" 与 `docs/issues/decision-quality/06-*.md`）。上一版那句"未在本机执行"是记录当时的状态。
+>
+> **2026-10-17 追加：`[x] README.zh-CN.md 同步` 已无处可指。** 那份文件后来被删除（README 改为中文单语，见 commit `251a23c`），所以这个勾**不对应任何可核对的东西**。此处不改那一行——本文是当时的验收记录，改写它等于改历史；正确的读法是：该勾所承诺的"同步"随文件一起作废。ADR-0035 带来的文档同步（README 的配对码小节、AGENTS.md 的本地身份一节）是**另一次**改动，记在 ADR-0035 的「实现注记」里。

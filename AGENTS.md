@@ -250,6 +250,8 @@ Business behaviour has **exactly one implementation**: the tRPC procedures in `l
 
 Adding a capability therefore has a fixed order: **procedure → CLI command → skill entry → Web entry**. The last one matters only when the capability is user-facing; the parity gate in `cli/parity.test.ts` decides that, and a new capability is not done until both surfaces are settled.
 
+**Which primitive: `ownedProcedure` or `credentialProcedure`** (ADR-0035). Every procedure inherits one of three declared answers to "凭什么" — `ctx.authentication` is `session` (the HTTP path, always), `credential` (a real API key, from `--api-key` / env / key file) or `identity-selector` (`FATEBOOK_AGENT_USER_EMAIL`, which is **not** a secret: anyone on the box who sets it is that identity). `ownedProcedure` accepts all three; `credentialProcedure` accepts only `credential`. Anything a **credential holder alone** may do — issuing a pairing code today — uses `credentialProcedure`, otherwise a web session can do it for itself via `/api/trpc` and the ADR sentence becomes a comment. The mapping lives at the construction sites (`lib/web/context.ts`, `cli/context.ts`) and is asserted in `cli/context.test.ts`.
+
 **Harness neutrality.** A skill must load in any runtime that follows the [Agent Skills specification](https://agentskills.io/specification) — no pi-specific paths or flags may appear in the skill body, and the skill must state provenance **explicitly** instead of relying on the caller's environment (environment markers only supply a default; see ADR-0024). A non-pi agent must record what a pi agent would record.
 
 **Deliverable shape.** Every agent-facing capability ships with an executable acceptance path: what to say, what to run, what to observe. "It should work" is not acceptance — see `docs/uat-pi-agent.md` for the first one.
@@ -814,15 +816,23 @@ If you make a mistake later, you can always use `git revert` or `git reset` to f
 
 ### 分层验证命令
 
-| 层                    | 命令                    | 前置                                                               |
-| --------------------- | ----------------------- | ------------------------------------------------------------------ |
-| 类型                  | `npm run typecheck`     | 无                                                                 |
-| Lint                  | `npm run lint`          | 无                                                                 |
-| 单元 / 组件           | `npm test`              | 无                                                                 |
-| 单元 + 覆盖率门槛     | `npm run test:coverage` | 无（**CI 跑的是这条**；本地只跑 `npm test` 会看不到门槛）          |
-| 端到端（agent → Web） | `npm run test:e2e`      | `docker compose up -d db mail` + `npx playwright install chromium` |
+| 层                     | 命令                    | 前置                                                               |
+| ---------------------- | ----------------------- | ------------------------------------------------------------------ |
+| 类型                   | `npm run typecheck`     | 无                                                                 |
+| Lint                   | `npm run lint`          | 无                                                                 |
+| 单元 / 组件            | `npm test`              | 无                                                                 |
+| 单元 + 覆盖率门槛      | `npm run test:coverage` | 无（**CI 跑的是这条**；本地只跑 `npm test` 会看不到门槛）          |
+| 端到端（agent → Web）  | `npm run test:e2e`      | `docker compose up -d db mail` + `npx playwright install chromium` |
+| 生产构建（客户端打包） | `npx next build`        | 无（**在 `pages/` 下新增或被导入的模块必须跑这条**，见下）         |
 
 > **本地要跑与 CI 完全一致的那条**：`.github/workflows/test.yml` 的门禁是 `test:coverage`（`jest.config.ts` 的 `coverageThreshold` 只在它下面生效）。历史上交付记录里写的都是 `npm test`，于是某个新模块跌破阈值时**本地全绿、CI 全红**，谁都没看见。`.husky/pre-push` 现在跑的就是 `test:coverage`。
+
+> **`pages/` 下的模块必须能被浏览器打包**：页面即便只在 `getServerSideProps` 里用某个
+> 服务端模块，Next 也会把它打进**客户端**那一份 bundle。一个 `import crypto from "node:crypto"`
+> 就足以让整页变成 "Build Error"（实测：`UnhandledSchemeError: Reading from "node:crypto"
+is not handled by plugins`），而 `tsc` / `eslint` / 单测全绿——**只有 `npx next build`
+> 或 e2e 看得见**。做法是把浏览器要用的部分拆到一个零 `node:` 依赖的叶子模块里
+> （`lib/web/pairing_flag.ts` 就是为此存在，`pairing_flag.test.ts` 用源码断言守住这条）。
 
 ### 改动数据库里**已有的**数据之前，先跑 `scripts/verify-migration-upgrade.ts`
 
@@ -959,18 +969,20 @@ npm run --silent agent -- list-due
 
 **先选身份，再动手**：两种身份的可用范围不同（见下表）。
 
-|          | 正式身份（推荐）                                                                               | 验证账号                                                                                                                 |
-| -------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| 怎么来   | 网页用**带点域名的邮箱**登录 → `/api-setup` 复制 key → 写进 `.env` 的 `FATEBOOK_AGENT_API_KEY` | `npm run --silent agent -- init --label <名> --allow-create-user`（建出 `<名>@localhost`）                               |
-| 能上网页 | ✅ 一个身份两条渠道（agent 写的，网页看得见、可背书）                                          | ❌ **永远不能**：域名不带点的地址在 NextAuth 发信前就被拒（`error=EmailSignin`，页面回 `The e-mail could not be sent.`） |
-| 适合     | 走完整回路、UAT、任何"人要看到数据"的场景                                                      | 纯 CLI 检查、脚本、迁移验证、e2e                                                                                         |
+|          | 正式身份（推荐）                                                                               | 验证账号                                                                                                                                                                                                 |
+| -------- | ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 怎么来   | 网页用**带点域名的邮箱**登录 → `/api-setup` 复制 key → 写进 `.env` 的 `FATEBOOK_AGENT_API_KEY` | `npm run --silent agent -- init --label <名> --allow-create-user`（建出 `<名>@localhost`）                                                                                                               |
+| 能上网页 | ✅ 一个身份两条渠道（agent 写的，网页看得见、可背书）                                          | ✅ 可，走**配对码**：`FATEBOOK_ENABLE_PAIRING_LOGIN=1` 后 `issue-pairing-code` → 本机打开 `/pair` 填码（ADR-0035）。❌ 邮件门仍然进不去：域名不带点的地址在 NextAuth 发信前就被拒（`error=EmailSignin`） |
+| 适合     | 走完整回路、UAT、任何"人要看到数据"的场景                                                      | 纯 CLI 检查、脚本、迁移验证、e2e                                                                                                                                                                         |
 
 **规则（按踩坑顺序）**
 
-1. **把网页账号的 key 交给 agent**（方向只有 Web → CLI）。不要用 `init` 建的 `<label>@localhost` 去登网页。
+1. **把网页账号的 key 交给 agent**（Web → CLI 是常态）。不要用 `init` 建的 `<label>@localhost` 去走**邮件门**（发信前就被拒）；它要进网页就走配对码（默认关闭，见上表）。
 2. **换身份后重跑 `./startup.sh`**。领域词表**按用户**存（`@@unique([nameNormalized, userId])`）；不重跑时 `create-decision --tags 投资/宏观` 会报“未知领域”。
 3. **本地 magic link 只会到 Mailpit**（<http://localhost:8025>），不进真邮箱。只要域名带点，填一个你并不拥有的地址也能登录。
-4. **想造"两面都能用"的本地身份**：用带点的地址（`FATEBOOK_AGENT_USER_EMAIL=you@fatebook.local`），别用 `init` 默认的 `<label>@localhost`。
-5. **判据（排查登录问题时用，别靠猜）**：
+4. **想造"两面都能用"的本地身份**：用带点的地址（`FATEBOOK_AGENT_USER_EMAIL=you@fatebook.local`）最省事；已经建好的 `<label>@localhost` 也可以是两面的——用配对码进网页，不必重建。
+5. **签发配对码要求真凭据**（ADR-0035）：`issue-pairing-code` 在 `FATEBOOK_AGENT_USER_EMAIL` 那条路径上**会被拒**——那是**身份选择器**（不含秘密，谁设了都能以该身份跑命令），过程层是 `credentialProcedure`，只认 `ctx.authentication === "credential"`。要签发就把 key 放进环境变量或 `FATEBOOK_AGENT_API_KEY_FILE`；`whoami` 会告诉你当前是哪一档。
+6. **身份作用域是进程，不是目录**（ADR-0036）：优先级 `--api-key` > `FATEBOOK_AGENT_API_KEY` > `FATEBOOK_AGENT_API_KEY_FILE`（文件里只放一把钥匙，从头到尾不留 shell 历史）> `FATEBOOK_AGENT_USER_EMAIL`。所在副本的 `.env` 只是**默认来源**：同一个目录里跑两个进程、各自带一把钥匙，就是两个身份；同一把钥匙被两个进程用，则两边是同一个身份（允许）。**一个进程内不换身份。**
+7. **判据（排查登录问题时用，别靠猜）**：
    - 打一次登录接口看是哪种结局：`curl -s -c /tmp/cj http://localhost:3000/api/auth/csrf` 取 token，再 `POST /api/auth/signin/email`（带 `csrfToken` / `email` / `callbackUrl`）——落在 `verify-request` 是**发信成功**，落在 `error=EmailSignin` 是**地址被拒**。
    - 想知道是"邮件层"还是"应用层"：直接对 Mailpit（`smtp://localhost:1025`）试投同一个地址。**Mailpit 收得下而应用报错 ⇒ 问题在地址校验，不在邮件服务。**

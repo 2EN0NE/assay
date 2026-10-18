@@ -149,13 +149,13 @@ Agent 写入的记录会标注录入来源，并**从未背书**开始——它�
 
 ### 用哪种身份——真实邮箱 vs 测试账号
 
-本地身份有两种，**只有一种能登进网页**。本地单人使用走 A；纯 CLI 或自动化测试才用 B。
+本地身份有两种，**两者都能进网页**，区别只在进法：A 走邮件门（推荐，配好就是一个身份两条渠道），B 走本机的一次性**配对码**（纯 CLI 与自动化测试仍然是它更自然的用法）。
 
 **A. 一个真实邮箱——推荐：一个身份，两条渠道。** 域名**带点**的地址都能用，不必真的拥有它。
 
 1. `npm run dev:e2e`，打开 <http://localhost:3000>，用这个邮箱登录。本地这封登录信**不会进你的真邮箱**，而是被 **Mailpit** 截在 <http://localhost:8025>——所以不需要 SMTP 账号。（真部署时把 `AUTH_EMAIL_SERVER` 指向真实发信服务，链接就会进真收件箱。）
 2. 登录后打开 **<http://localhost:3000/api-setup>**，复制 **Your API key**。未登录时那一页只有登录**按钮**：它会直接把 key 给你。
-3. 写进 `.env`：`FATEBOOK_AGENT_API_KEY=…`。于是 CLI 与网页是**同一个账号**：agent 记的东西在网页上看得见，也能在网页上背书。
+3. 写进 `.env`：`FATEBOOK_AGENT_API_KEY=…`。于是 CLI 与网页是**同一个账号**：agent 记的东西在网页上看得见，也能在网页上背书。不想让钥匙进 shell 历史或 `ps` 的话，改用 `FATEBOOK_AGENT_API_KEY_FILE=<路径>`（文件里只放这一把钥匙，末尾换行无所谓）。
 4. **重跑一次 `./startup.sh`**。四个初始领域词是**按用户**存的，新身份要有自己的一套——不重跑时 `create-decision --tags 投资/宏观` 会报“未知领域”。
 5. 在 pi 里与 agent 对话（`startup.sh` 已装好两个技能），然后到网页 `/decisions`、`/domains` 复盘。
 
@@ -165,9 +165,26 @@ Agent 写入的记录会标注录入来源，并**从未背书**开始——它�
 npm run --silent agent -- init --label my-check --allow-create-user
 ```
 
-用于纯 CLI 检查、脚本与自动化测试。**它登不进网页**：登录邮箱的域名必须带点，而它不带。
+用于纯 CLI 检查、脚本与自动化测试。它的邮箱域名不带点，所以**邮件门进不去**（`error=EmailSignin`）——但不必为此再建一个带点地址的账号：把它的 key 交给 CLI，再用下面那条捷径换一个浏览器会话即可。
 
-> **方向是单向的：Web → CLI。** 把**网页**账号的 key 交给 agent；反过来做不到。要造一个“两面都能用”的本地身份，就用带点的地址建：`FATEBOOK_AGENT_USER_EMAIL=you@fatebook.local`。
+> **方向仍然单向：Web → CLI 是常态。** 把**网页**账号的 key 交给 agent 最省事（一个身份两条渠道）。反过来（只有 CLI 身份、却想进网页）走一次配对码即可，不必新建账号。
+
+### 网页的第二扇门：本机配对码登录（默认关闭）
+
+邮件门是**人**的门，这一扇是**已经持有凭据的一方**在**本机**开的捷径（ADR-0035）：CLI 签发一个一次性码，人在浏览器里把它换成**同一个**会话。
+
+```shell
+# 1. 打开开关（默认关闭是决策本身，不是疏漏）
+echo 'FATEBOOK_ENABLE_PAIRING_LOGIN=1' >> .env
+# 2. 重启 Web 服务，然后签发一个码
+npm run --silent agent -- issue-pairing-code
+# → {"code":"XXXXXXXX","expiresAt":"…","redeemUrl":"https://localhost:3000/pair"}
+# 3. 在这台机器上打开 redeemUrl，填码
+```
+
+五条限制都在服务端（`pages/api/pairing/redeem.ts`）：**只在本机（loopback）可兑换**、**只收 JSON 请求体**（跨站 `<form>` 发不进来）、**一次有效**、**10 分钟**、**失败限流**。签发那一半要**真凭据**：过程层是 `credentialProcedure`，所以网页会话（邮件门或配对码门）与只设了 `FATEBOOK_AGENT_USER_EMAIL` 的进程都会拿到 `FORBIDDEN`——后者是身份选择器，不含秘密（`CONTEXT.md`）。码本身在库里只存哈希，明文只在签发那一刻打印；换来的 cookie 与邮件门同为**会话 cookie**（关掉浏览器即失效）。
+
+> 开关**不能用 `NODE_ENV` 推断**：在内网主机上跑开发模式时那等于给一台服务家人的机器开后门。要对外提供服务时请走**邮件门**（它一直是保留的那条路），并把发信域配好 SPF/DKIM。
 
 每一步该看什么（完整叙事见 [docs/uat-pi-agent.md](docs/uat-pi-agent.md)）：
 
