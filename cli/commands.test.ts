@@ -473,6 +473,73 @@ describe("决策命令（ADR-0019 / 0020 · ticket 05）", () => {
     })
   })
 
+  it('--action-due "" 归一为 null：撤销承诺时点是可写的，否则「清空动作」那条指引做不到', async () => {
+    const { decisionMocks, session } = fakeContext()
+
+    await command("update-narrative").run(
+      parseArgs([
+        "--decision-id",
+        "d1",
+        "--action",
+        "",
+        "--action-due",
+        "",
+        "--reason",
+        "这个承诺不做了",
+      ]),
+      session,
+    )
+
+    expect(decisionMocks.updateNarrative).toHaveBeenCalledWith({
+      decisionId: "d1",
+      action: "",
+      actionDueAt: null,
+      statement: undefined,
+      reasoning: undefined,
+      expectedOutcome: undefined,
+      knownInfo: undefined,
+      unknownInfo: undefined,
+      reason: "这个承诺不做了",
+    })
+  })
+
+  it("attach-prediction 把可核到的清单事实**说出来**（ADR-0038 第五点）", async () => {
+    const { decisionMocks, session } = fakeContext()
+    // 返回值里带着它 ≠ 有人读过它：这里断言的是"说出了口"，不是"字段存在"。
+    // 形状照抄真实返回值：`attachPrediction` 返回的是被挂上的**那条预测**
+    // （`prisma.question.update` 的结果），所以 `id` 是 question id——提示里的
+    // `--decision-id` 必须来自入参，取 `attached.id` 会拼出一条必然失败的命令。
+    decisionMocks.attachPrediction.mockResolvedValue({
+      id: "q1",
+      rubricSuggestions: [
+        {
+          itemKey: "falsifiableCriteria",
+          evidence: "已填写结算判据：下季度 CPI 同比 < 3%",
+        },
+      ],
+    })
+    const stderr = jest.spyOn(console, "error").mockImplementation(() => {})
+
+    const result = await command("attach-prediction").run(
+      parseArgs(["--decision-id", "d1", "--question-id", "q1"]),
+      session,
+    )
+
+    const printed = stderr.mock.calls.map((call) => String(call[0])).join("\n")
+    expect(printed).toContain("falsifiableCriteria")
+    // 决策 id 来自入参，不是返回值的 `id`（后者是 question id）
+    expect(printed).toContain("set-rubric --decision-id d1")
+    expect(printed).not.toContain("--decision-id q1")
+    // 提示走 stderr，返回值原样透传（stdout 仍是数据通道）
+    expect(result).toEqual(
+      expect.objectContaining({
+        id: "q1",
+        rubricSuggestions: expect.any(Array),
+      }),
+    )
+    stderr.mockRestore()
+  })
+
   it("detach-prediction 与 attach-prediction 对称：只需 question-id", async () => {
     const { decisionMocks, session } = fakeContext()
 

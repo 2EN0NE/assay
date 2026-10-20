@@ -491,8 +491,8 @@ describe("handleQuestionResolution（结算入口，ADR-0004）", () => {
     expect(jest.mocked(prisma.questionScore.upsert)).toHaveBeenCalled()
     // 锁定时点只写在结算路径上：背书/拒绝写入那两条路径都不该写它
     expect(jest.mocked(prisma.decision.updateMany)).toHaveBeenCalledWith({
-      where: { questions: { some: { id: "q1" } }, rubricLockedAt: null },
-      data: { rubricLockedAt: expect.any(Date) },
+      where: { questions: { some: { id: "q1" } }, lockedAt: null },
+      data: { lockedAt: expect.any(Date) },
     })
   })
 

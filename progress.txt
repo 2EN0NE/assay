@@ -521,3 +521,33 @@
 - `e2e/agent-cli.spec.ts` 的「未量化的命题是合法状态」仍是红的（与本次改动无关，见上一轮记录）。
 - `npm run dev:e2e` 把开关只给了 Web 进程，CLI 读 `.env` —— 已在 `docs/uat-pi-agent.md` 的故障表登记，
   但更彻底的做法是让 `dev:e2e` 不再自带该变量（要求两侧都从 `.env` 读）。
+
+---
+
+## Session: 2026-10-20（第三轮评审发现项）
+
+### Completed
+
+- P1：`updateNarrative` 的承诺时点守卫改用 `!== undefined`，显式清空动作不再被当成"没提到"。
+- P1 回归用例：清空动作但保留 `actionDueAt` 必须被拒。
+- P2：`attachPrediction` 的冻结判据复用 `decisionLockOf`（存量行 `lockedAt = null` 时不再给出必被拒的提示）。
+- P2：`list-due --bucket` 的未来分桶改走 `upcoming`，`settleable` 只放已到点项；同时回显 `bucket`。
+- P2：补 `planActionRevisions`（7 条）与 `update-narrative --action` 路径（5 条）用例。
+- P2：CLI `--action-due ""` 归一为 `null`，错误文案给出可照做的写法。
+- P3：`update-narrative` summary 写明揭晓后冻结；清单栏文案改为「有未记录条目」。
+- P3：`docs/issues/` 的 `rubricLockedAt` → `lockedAt`，并标注 ADR-0037 对"叙事仍可补充"的收窄。
+- 验证：typecheck / lint / test:coverage（39 suites / 498 tests）/ next build / prettier --check 全绿。
+
+### Key Decisions
+
+- **`upcoming` 而不是改 `settleable` 的判据**：`settleable` 的定义（到点了）不因下钻而变；
+  给未到期项一个新栏名，比放宽旧栏名更不容易被误读。
+- **附件提示的"已冻结"只认 `decisionLockOf`**：第二份"算不算揭晓"的实现会被存量行悄悄拉开差距，
+  而症状是"提示了一条注定失败的命令"，不会报错。
+
+### Lessons Learned
+
+- **`??` 会把三态压成两态**：`undefined`（没提）/`null`（清空）在更新补丁里必须用 `!== undefined`
+  区分，否则守卫看到的是旧值——测试没覆盖该分支时，绿灯与数据完整性无关。
+- **advisory 里的行号不是本次改动**：pi-lens 报的 `cli/commands.ts:595/616` 是既有的
+  ESM 扩展名与硬编码 URL 规则，仓库门禁（tsc + next lint + jest）不看它们；按本仓库规范不处理。

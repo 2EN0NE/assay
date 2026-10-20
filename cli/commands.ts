@@ -1,4 +1,5 @@
 import type { appRouter } from "../lib/web/app_router"
+import { log } from "../lib/_log"
 import {
   Args,
   auditContext,
@@ -96,6 +97,28 @@ function parseRubricEntries(
   return [...done, ...notDone]
 }
 
+/** `--bucket` 暴露给人/agent 的写法 → 简报里的分桶名（ADR-0039）。 */
+const BUCKET_FLAGS = {
+  overdue: "overdue",
+  "1w": "within1w",
+  "1m": "within1m",
+  "1m+": "beyond1m",
+} as const
+
+function optionalBriefBucket(
+  args: Args,
+): (typeof BUCKET_FLAGS)[keyof typeof BUCKET_FLAGS] | undefined {
+  const raw = optionalString(args, "bucket")
+  if (raw === undefined) return undefined
+  const bucket = BUCKET_FLAGS[raw as keyof typeof BUCKET_FLAGS]
+  if (bucket === undefined) {
+    throw new CliError(
+      `--bucket 只能是 ${Object.keys(BUCKET_FLAGS).join(" / ")} 之一，收到：${raw}`,
+    )
+  }
+  return bucket
+}
+
 /**
  * `--tags a,b` → 领域名数组（ADR-0030）。
  *
@@ -112,13 +135,28 @@ function parseDomains(args: Args): string[] {
 
 export const commands: Command[] = [
   {
+    name: "brief",
+    summary:
+      "状态简报（ADR-0039）：未结算总数与到期分布、最近 3 条、清单有未记录条目（可救/已冻结）、未标领域、未背书、无预测的决策，每栏带下钻命令",
+    usage: "brief [--now <ISO>]",
+    run: (args, { agent }) =>
+      agent.brief({
+        now:
+          optionalString(args, "now") === undefined
+            ? undefined
+            : requireDate(args, "now"),
+      }),
+  },
+  {
     name: "list-due",
     summary:
-      "到期队列：可结算 / 悬空未结算两栏 + 未标领域计数（跟踪调用的主输入）",
-    usage: "list-due [--limit N] [--now <ISO>]",
+      "到期队列：可结算 / 悬空未结算两栏 + 未标领域计数；--bucket 下钻到未来分桶时，未到期的项在 upcoming 栏",
+    usage: "list-due [--limit N] [--now <ISO>] [--bucket overdue|1w|1m|1m+]",
     run: (args, { agent }) =>
       agent.listDue({
         limit: optionalNumber(args, "limit"),
+        // 分桶下钻（ADR-0039）：与简报 seeAlso 里的 --bucket 写法一一对应。
+        bucket: optionalBriefBucket(args),
         now:
           optionalString(args, "now") === undefined
             ? undefined
@@ -292,10 +330,16 @@ export const commands: Command[] = [
     name: "create-decision",
     summary: "创建一个决策：承载决策时点的推理过程（ADR-0001 / 0019）",
     usage:
-      "create-decision --statement <陈述> [--reasoning <理由>] [--expected-outcome <预期>] [--known-info <当时已知>] [--unknown-info <当时未知>] [--tags 投资/宏观,投资/公司业绩-Q3]",
+      "create-decision --statement <陈述> [--action <做什么>] [--action-due <ISO>] [--reasoning <理由>] [--expected-outcome <预期>] [--known-info <当时已知>] [--unknown-info <当时未知>] [--tags 投资/宏观,投资/公司业绩-Q3]",
     run: (args, { decision }) =>
       decision.create({
         statement: requireString(args, "statement"),
+        // ADR-0041：动作与承诺时点必须在决策当时写下
+        action: optionalString(args, "action"),
+        actionDueAt:
+          optionalString(args, "action-due") === undefined
+            ? undefined
+            : requireDate(args, "action-due"),
         reasoning: optionalString(args, "reasoning"),
         expectedOutcome: optionalString(args, "expected-outcome"),
         knownInfo: optionalString(args, "known-info"),
@@ -307,11 +351,31 @@ export const commands: Command[] = [
     name: "attach-prediction",
     summary: "把一条预测挂到决策上（一条预测至多属一个决策）",
     usage: "attach-prediction --decision-id ID --question-id ID",
-    run: (args, { decision }) =>
-      decision.attachPrediction({
-        decisionId: requireString(args, "decision-id"),
+    /**
+     * 挂接后把可核到的清单事实**说出来**（ADR-0038 第五点）。
+     *
+     * 接口原本就返回了 `rubricSuggestions`，但没有任何一处读它——那个字段等于没有。
+     * 提示走 stderr、只问不填：分值的唯一写手仍是 `set-rubric`。
+     */
+    run: async (args, { decision }) => {
+      // 决策 id 从参数取，不从返回值取：`attachPrediction` 返回的是**这条预测**
+      // （`prisma.question.update` 的结果），它的 `id` 是 question id。拿它去拼
+      // `--decision-id` 会让提示里的命令必然报“找不到该决策”。
+      const decisionId = requireString(args, "decision-id")
+      const attached = await decision.attachPrediction({
+        decisionId,
         questionId: requireString(args, "question-id"),
-      }),
+      })
+
+      for (const suggestion of attached.rubricSuggestions ?? []) {
+        log(
+          `提示：清单条目「${suggestion.itemKey}」看起来在库里已成立（${suggestion.evidence}）。` +
+            `要记下来吗？→ set-rubric --decision-id ${decisionId} --done ${suggestion.itemKey}`,
+        )
+      }
+
+      return attached
+    },
   },
   {
     name: "set-rubric",
@@ -327,18 +391,44 @@ export const commands: Command[] = [
   {
     name: "update-narrative",
     summary:
-      "补充/修改决策叙事：补写空白字段自由，改写已填写内容须带 --reason（ADR-0012）",
+      "补充/修改决策叙事（揭晓前）：补写空白字段自由，改写已填写内容须带 --reason（ADR-0012）；揭晓后一律拒绝，事后表达用 record-reflection（ADR-0037）",
     usage:
-      "update-narrative --decision-id ID [--statement S] [--reasoning R] [--expected-outcome E] [--known-info K] [--unknown-info U] [--reason REASON]",
+      'update-narrative --decision-id ID [--action A|""] [--action-due D|""] [--statement S] [--reasoning R] [--expected-outcome E] [--known-info K] [--unknown-info U] [--reason REASON]（空串 = 清空该字段）',
     run: (args, { decision }) =>
       decision.updateNarrative({
         decisionId: requireString(args, "decision-id"),
+        // ADR-0041：动作是"当初的记录"的一半，与叙事同一条留痕/冻结规则
+        action: optionalString(args, "action"),
+        // `--action-due ""` = 显式清空（撤销承诺时点）。没有这个写法时，"清空动作"
+        // 会被守卫要求同时清空时点，而那在 CLI 里做不到——一条照着做做不到的指引。
+        actionDueAt: (() => {
+          const raw = optionalString(args, "action-due")
+          if (raw === undefined) return undefined
+          return raw === "" ? null : requireDate(args, "action-due")
+        })(),
         statement: optionalString(args, "statement"),
         reasoning: optionalString(args, "reasoning"),
         expectedOutcome: optionalString(args, "expected-outcome"),
         knownInfo: optionalString(args, "known-info"),
         unknownInfo: optionalString(args, "unknown-info"),
         reason: optionalString(args, "reason"),
+      }),
+  },
+  {
+    name: "record-execution",
+    summary:
+      "记录执行事实（ADR-0041）：只增不改；--abandoned 表示明确放弃（不是「一直没做」）",
+    usage:
+      "record-execution --decision-id ID [--abandoned] [--at <ISO>] [--note 备注]",
+    run: (args, { decision }) =>
+      decision.recordExecution({
+        decisionId: requireString(args, "decision-id"),
+        kind: hasFlag(args, "abandoned") ? "ABANDONED" : "EXECUTED",
+        occurredAt:
+          optionalString(args, "at") === undefined
+            ? undefined
+            : requireDate(args, "at"),
+        note: optionalString(args, "note"),
       }),
   },
   {
@@ -358,11 +448,27 @@ export const commands: Command[] = [
       decision.byId({ decisionId: requireString(args, "decision-id") }),
   },
   {
-    name: "list-decisions",
-    summary: "列出全部决策（与 Web 的 /decisions 同口径）",
-    usage: "list-decisions [--limit N]",
+    name: "record-reflection",
+    summary:
+      "写一条复盘记录（ADR-0037）：只增不改、独立成栏；结算后写事后想法用它，不要改叙事字段",
+    usage: "record-reflection --decision-id ID --text 内容",
     run: (args, { decision }) =>
-      decision.list({ limit: optionalNumber(args, "limit") }),
+      decision.recordReflection({
+        decisionId: requireString(args, "decision-id"),
+        body: requireString(args, "text"),
+      }),
+  },
+  {
+    name: "list-decisions",
+    summary:
+      "列出全部决策（与 Web 的 /decisions 同口径）；--rubric-missing 只列清单有未记录条目的；--action-overdue 只列承诺到期未执行的",
+    usage: "list-decisions [--limit N] [--rubric-missing] [--action-overdue]",
+    run: (args, { decision }) =>
+      decision.list({
+        limit: optionalNumber(args, "limit"),
+        rubricMissing: hasFlag(args, "rubric-missing") || undefined,
+        actionOverdue: hasFlag(args, "action-overdue") || undefined,
+      }),
   },
   {
     name: "add-domain",

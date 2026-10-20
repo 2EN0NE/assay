@@ -30,8 +30,14 @@ jest.mock("../prisma", () => ({
       findUnique: jest.fn(),
       update: jest.fn(),
     },
-    decision: { findFirst: jest.fn(), count: jest.fn() },
-    forecast: { create: jest.fn(), findMany: jest.fn(), updateMany: jest.fn() },
+    decision: { findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn() },
+    forecast: {
+      create: jest.fn(),
+      findMany: jest.fn(),
+      updateMany: jest.fn(),
+      // ADR-0039 的「未背书数字」一栏按条计数
+      count: jest.fn(),
+    },
     notification: {
       create: jest.fn(),
       findMany: jest.fn(),
@@ -253,6 +259,35 @@ describe("agent.listDue —— 可结算与悬空未结算必须分栏", () => {
     const result = await asOwner().listDue({})
 
     expect(result.dangling).toEqual([])
+  })
+
+  it("--bucket 落在未来 ⇒ 未到期的项走 upcoming，不冒充 settleable（ADR-0039）", async () => {
+    const now = new Date("2026-10-20T00:00:00Z")
+    const future = {
+      ...dueQuestion,
+      id: "future-1",
+      resolveBy: new Date("2026-10-22T00:00:00Z"),
+    }
+    questionFindMany.mockResolvedValueOnce([future]).mockResolvedValueOnce([])
+
+    const result = await asOwner().listDue({ bucket: "within1w", now })
+
+    expect(result.bucket).toBe("within1w")
+    expect(result.settleable).toEqual([])
+    expect(result.upcoming.map((q) => q.id)).toEqual(["future-1"])
+  })
+
+  it("--bucket overdue ⇒ 到点的项仍在 settleable（下钻不改变那一栏的定义）", async () => {
+    const now = new Date("2026-10-20T00:00:00Z")
+    questionFindMany
+      .mockResolvedValueOnce([dueQuestion])
+      .mockResolvedValueOnce([])
+
+    const result = await asOwner().listDue({ bucket: "overdue", now })
+
+    expect(result.bucket).toBe("overdue")
+    expect(result.settleable.map((q) => q.id)).toEqual(["due-1"])
+    expect(result.upcoming).toEqual([])
   })
 })
 
@@ -1051,5 +1086,149 @@ describe("agent.issuePairingCode —— 开关在过程层也判（ADR-0035）",
     )
 
     expect(pairingCodeCreate).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * ADR-0039：简报是**现算**的当前状态，唯一生产者是这条 procedure。
+ *
+ * 这组用例的存在理由：`brief.ts` 的纯函数各自有用例，但"未冻结 / 已冻结"的拆分、
+ * 四个动作计数、以及 `seeAlso` 随返回值一起给出，都只发生在这里——纯函数测不到。
+ */
+describe("agent.brief —— 现算快照，六栏各说各的事（ADR-0039）", () => {
+  const decisionFindMany = (
+    prisma as unknown as { decision: { findMany: jest.Mock } }
+  ).decision.findMany
+  const decisionCount = (
+    prisma as unknown as { decision: { count: jest.Mock } }
+  ).decision.count
+  const forecastCount = (
+    prisma as unknown as { forecast: { count: jest.Mock } }
+  ).forecast.count
+
+  const NOW = new Date("2026-10-19T00:00:00Z")
+  const day = (n: number) => new Date(NOW.getTime() + n * 24 * 60 * 60 * 1000)
+
+  /** 一条决策：`resolved` 决定它算不算已揭晓，`entries` 决定清单记录了多少。 */
+  const decisionRow = (
+    id: string,
+    options: {
+      resolved?: boolean
+      entries?: { itemKey: string; status: "DONE" | "NOT_DONE" }[]
+      action?: string | null
+      actionDueAt?: Date | null
+      executions?: { kind: "EXECUTED" | "ABANDONED"; occurredAt: Date }[]
+    } = {},
+  ) => ({
+    id,
+    rubricVersion: 1,
+    lockedAt: null,
+    action: options.action ?? null,
+    actionDueAt: options.actionDueAt ?? null,
+    executions: options.executions ?? [],
+    rubricEntries: options.entries ?? [],
+    questions:
+      options.resolved === undefined ? [] : [{ resolved: options.resolved }],
+  })
+
+  beforeEach(() => {
+    decisionCount.mockResolvedValue(0)
+    forecastCount.mockResolvedValue(0)
+  })
+
+  it("到期按 Prediction 计数，最近 3 条只从「逾期 + 一周内」取", async () => {
+    questionFindMany.mockResolvedValue([
+      { id: "q1", title: "逾期了", resolveBy: day(-1), decisionId: "d1" },
+      { id: "q2", title: "一周内", resolveBy: day(3), decisionId: null },
+      { id: "q3", title: "一月以上", resolveBy: day(60), decisionId: null },
+    ])
+    decisionFindMany.mockResolvedValue([])
+
+    const brief = await asOwner().brief({ now: NOW })
+
+    expect(brief.due).toEqual({
+      overdue: 1,
+      within1w: 1,
+      within1m: 0,
+      beyond1m: 1,
+      unsettled: 3,
+    })
+    expect(brief.nearest.map((p) => p.id)).toEqual(["q1", "q2"])
+  })
+
+  it("清单从未记录拆成「可救 / 已冻结」：前者是待办，后者只是事实（ADR-0037）", async () => {
+    questionFindMany.mockResolvedValue([])
+    decisionFindMany.mockResolvedValue([
+      // 还救得回来：一条都没结算
+      decisionRow("d-unfrozen", { resolved: false }),
+      // 已冻结：有 Prediction 已结算，清单仍是空的
+      decisionRow("d-frozen", { resolved: true }),
+      // 清单记满了 ⇒ 两栏都不算
+      decisionRow("d-complete", {
+        entries: [
+          { itemKey: "alternatives", status: "DONE" },
+          { itemKey: "premortem", status: "DONE" },
+          { itemKey: "baseRate", status: "DONE" },
+          { itemKey: "whatIfWrong", status: "DONE" },
+          { itemKey: "falsifiableCriteria", status: "DONE" },
+        ],
+      }),
+    ])
+
+    const brief = await asOwner().brief({ now: NOW })
+
+    expect(brief.rubricNeverRecorded).toEqual({ unfrozen: 1, frozen: 1 })
+  })
+
+  it("动作按状态分开计数——逾期与「未记录」不混（ADR-0041 §四）", async () => {
+    questionFindMany.mockResolvedValue([])
+    decisionFindMany.mockResolvedValue([
+      { ...decisionRow("d-overdue"), action: "压预算", actionDueAt: day(-1) },
+      { ...decisionRow("d-planned"), action: "签字", actionDueAt: day(10) },
+      // 没有承诺时点也是「计划中」：它要求的动作与「还没到点」相同
+      { ...decisionRow("d-no-due"), action: "回邮件", actionDueAt: null },
+      {
+        ...decisionRow("d-executed"),
+        action: "签字",
+        executions: [{ kind: "EXECUTED", occurredAt: day(-2) }],
+      },
+      {
+        ...decisionRow("d-abandoned"),
+        action: "签字",
+        actionDueAt: day(-30),
+        executions: [{ kind: "ABANDONED", occurredAt: day(-20) }],
+      },
+      // 从未写下动作 ⇒ 不进任何动作计数（缺失不是否定）
+      decisionRow("d-no-action"),
+    ])
+
+    const brief = await asOwner().brief({ now: NOW })
+
+    expect(brief.actions).toEqual({
+      planned: 2,
+      overdue: 1,
+      executed: 1,
+      abandoned: 1,
+    })
+  })
+
+  it("未标领域 / 未背书 / 无预测即使为零也要各报一行，且 seeAlso 随返回值给出", async () => {
+    questionFindMany.mockResolvedValue([])
+    decisionCount.mockResolvedValue(3)
+    forecastCount.mockResolvedValue(2)
+    decisionFindMany.mockResolvedValue([decisionRow("d-empty")])
+
+    const brief = await asOwner().brief({ now: NOW })
+
+    expect(brief.untaggedDecisions).toBe(3)
+    expect(brief.unendorsedForecasts).toBe(2)
+    // 「0 条预测的决策」= 一栏事实，不是桶里的一条（ADR-0039 第三点）
+    expect(brief.decisionsWithoutPredictions).toBe(1)
+    expect(brief.due.unsettled).toBe(0)
+    // 下钻命令随返回给出：只许指向真实存在的命令（由 docs_commands.test.ts 守着）
+    expect(
+      Object.values(brief.seeAlso).every((line) => line.includes("npm run")),
+    ).toBe(true)
+    expect(brief.generatedAt).toEqual(NOW)
   })
 })

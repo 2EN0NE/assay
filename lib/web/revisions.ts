@@ -10,8 +10,10 @@ import type { DecisionNarrative } from "./decisions"
  * 唯一的例外：**首次 Forecast 之前**的改动不算修订。那时还没有任何信念被记录，
  * 改动无漂移可言，纯粹是修文字。
  *
- * 同一机制也承载 **Decision 叙事字段**的改写（ADR-0020）：同样"可改、必留痕"，
- * 但例外不同——叙事没有 Forecast 可等，例外是"给**空白**字段补写"不算改写。
+ * 同一机制也承载 **Decision 叙事字段**的改写（ADR-0020）：揭晓前"可改、必留痕"，
+ * 例外是"给**空白**字段补写"不算改写（那几个字段还没有人读过，补记不构成漂移）。
+ * 揭晓之后叙事整体冻结（ADR-0037）——那时任何改动都不再走这里，而是新增一条
+ * `DecisionReflection`。
  */
 
 export const REVISION_TRACKED_FIELDS = [
@@ -148,6 +150,56 @@ export function planNarrativeRevisions(
     if (previous === null) continue
 
     drafts.push({ field, oldValue: previous, newValue: next })
+  }
+  return drafts
+}
+
+/** 决策动作的承诺半边（ADR-0041）：与叙事同一条留痕规则。 */
+export const ACTION_TRACKED_FIELDS = ["action", "actionDueAt"] as const
+
+export type ActionTrackedField = (typeof ACTION_TRACKED_FIELDS)[number]
+
+export type ActionSnapshotValues = {
+  action: string | null
+  actionDueAt: Date | null
+}
+
+export type ActionRevisionDraft = {
+  field: ActionTrackedField
+  oldValue: string | null
+  newValue: string | null
+}
+
+/**
+ * 纯函数：算出这次动作改动应当留下哪些修订记录。
+ *
+ * 与 `planNarrativeRevisions` 完全同构，包括那条例外：**空白 → 填写**是补写，
+ * 不算改写。理由是同一个（当初就没记），残余风险也写在 ADR-0041 里：揭晓前补写
+ * 一个"看起来像当初就打算这么做"的动作是可能的，可用的边界只有揭晓。
+ *
+ * 不合并进叙事那份函数：两者的字段集合不同（一个全是 string，一个含 Date），
+ * 而把两种形状压进一个泛型只会让调用点更难读——**机制相同**（serialize / isSame /
+ * 必须带理由），但**字段表各自一份**。
+ */
+export function planActionRevisions(
+  before: ActionSnapshotValues,
+  patch: Partial<ActionSnapshotValues>,
+): ActionRevisionDraft[] {
+  const drafts: ActionRevisionDraft[] = []
+
+  for (const field of ACTION_TRACKED_FIELDS) {
+    const next = patch[field]
+    if (next === undefined) continue
+
+    const previous = before[field]
+    if (isSame(previous, next)) continue
+    if (previous === null) continue
+
+    drafts.push({
+      field,
+      oldValue: serialize(previous),
+      newValue: serialize(next),
+    })
   }
   return drafts
 }

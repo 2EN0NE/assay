@@ -188,12 +188,12 @@ npm run --silent agent -- issue-pairing-code
 
 每一步该看什么（完整叙事见 [docs/uat-pi-agent.md](docs/uat-pi-agent.md)）：
 
-| 环节 | 命令                                                         | 期望                                                             |
-| ---- | ------------------------------------------------------------ | ---------------------------------------------------------------- |
-| 身份 | `npm run --silent agent -- whoami`                           | 就是你登录用的那个邮箱，`credentialSource: api-key-env`          |
-| 词表 | `npm run --silent agent -- list-domains`                     | 四个初始领域词（重跑 `startup.sh` 之后）                         |
-| 队列 | `npm run --silent agent -- list-due`                         | 两栏：`settleable`（待办）/ `dangling`（缺可核查来源，先补来源） |
-| 读数 | `npm run --silent agent -- domain-report --prefix 投资/宏观` | 少于 5 条只给 `n` + `pending`；5 条起给桶；20 条起给技能分与区间 |
+| 环节 | 命令                                                         | 期望                                                                                                       |
+| ---- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
+| 身份 | `npm run --silent agent -- whoami`                           | 就是你登录用的那个邮箱，`credentialSource: api-key-env`                                                    |
+| 词表 | `npm run --silent agent -- list-domains`                     | 四个初始领域词（重跑 `startup.sh` 之后）                                                                   |
+| 队列 | `npm run --silent agent -- list-due`                         | 三栏：`settleable`（待办）/ `upcoming`（未到点，仅 `--bucket` 下钻）/ `dangling`（缺可核查来源，先补来源） |
+| 读数 | `npm run --silent agent -- domain-report --prefix 投资/宏观` | 少于 5 条只给 `n` + `pending`；5 条起给桶；20 条起给技能分与区间                                           |
 
 ### 技能放在哪里
 

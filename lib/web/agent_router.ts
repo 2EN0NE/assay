@@ -6,6 +6,16 @@ import { assertOwnedDecision } from "./decision_router"
 import type { Prisma } from "@prisma/client"
 import { propagateDecisionDomainsToQuestion } from "./domain_tags"
 import { decideSettlement } from "./settlement_authority"
+import {
+  BRIEF_BUCKETS,
+  BRIEF_SEE_ALSO,
+  BriefBucket,
+  bucketRangeOf,
+  nearestDue,
+  summarizeDue,
+} from "./brief"
+import { actionStateOf } from "./decision_action"
+import { decisionLockOf, deriveRubricCompletion } from "./decision_rubric"
 import { danglingReason, isDangling } from "./settlement_scope"
 import { untaggedDecisionWhere } from "./domain_tags"
 import { handleQuestionResolution, rescoreResolvedQuestion } from "./resolution"
@@ -123,17 +133,29 @@ export const agentRouter = router({
         .object({
           limit: z.number().int().positive().max(200).default(50),
           now: z.date().optional(),
+          /**
+           * 分桶下钻（ADR-0039）：`list-due --bucket overdue|1w|1m|1m+`。
+           *
+           * 区间来自 `bucketRangeOf`——与简报的 `bucketOf` 互为逆运算。两处各写一遍
+           * 边界，一条恰好落在一周整的预测就会同时出现在两个桶里或两个都不出现。
+           */
+          bucket: z
+            .enum(BRIEF_BUCKETS as unknown as [BriefBucket, ...BriefBucket[]])
+            .optional(),
         })
         .optional(),
     )
     .query(async ({ ctx, input }) => {
       const limit = input?.limit ?? 50
+      const now = input?.now ?? new Date()
       const [due, danglingCandidates, untaggedDecisions] = await Promise.all([
         prisma.question.findMany({
           where: {
             userId: ctx.userId,
             resolved: false,
-            resolveBy: { lte: input?.now ?? new Date() },
+            resolveBy: input?.bucket
+              ? bucketRangeOf(input.bucket, now)
+              : { lte: now },
           },
           orderBy: { resolveBy: "asc" },
           take: limit,
@@ -156,9 +178,22 @@ export const agentRouter = router({
         // （`untaggedDecisionWhere`），否则两处各说各话。
         prisma.decision.count({ where: untaggedDecisionWhere(ctx.userId) }),
       ])
+      // 分桶下钻可能落在**未来**（1w / 1m / 1m+）：那些预测还没到期，不能进
+      // `settleable`——那一栏的定义是"到点了，而且有人能核实 ⇒ 这是待办"。
+      // 把未到期项塞进去，会让"一周内 8 条"被读成"8 条现在就该结算"。
+      const dueNow = due.filter(
+        (question) => question.resolveBy.getTime() <= now.getTime(),
+      )
+      const upcoming = due.filter(
+        (question) => question.resolveBy.getTime() > now.getTime(),
+      )
 
       return {
-        settleable: due.map((q) => toPredictionView(q, ctx.userId)),
+        /** 本次下钻的分桶；`null` = 未分桶（等价于 overdue）。 */
+        bucket: input?.bucket ?? null,
+        settleable: dueNow.map((q) => toPredictionView(q, ctx.userId)),
+        /** 落在未来分桶里的项：**还没到点**，不是待办。 */
+        upcoming: upcoming.map((q) => toPredictionView(q, ctx.userId)),
         // ADR-0030 §八：未标领域必须可见，且**没有到期项时也要报**——这一行依附的是
         // “队列被拉过一次”，不是“队列非空”；只在有到期项时顺带提，那句要求就落不了地。
         untaggedDecisions,
@@ -169,6 +204,106 @@ export const agentRouter = router({
             ...toPredictionView(q, ctx.userId),
             reason: danglingReason(q),
           })),
+      }
+    }),
+
+  /**
+   * 状态简报（ADR-0039）：一份**现算**的当前状态快照。
+   *
+   * 不落库、不缓存进库：落库的读数必然过期，而一旦过期，人会按过期的状态做决定
+   * （与 ADR-0020 第三点同一条理由）。CLI、Web 首页与每轮注入读的都是这一个过程。
+   *
+   * 单位是 **Prediction**：只有它有 `resolveBy`。按决策计会给出第二套数字，而
+   * "简报说 8、list-due 说 12"这种不一致**不会报错**，只会让人不再相信任何一个。
+   */
+  brief: ownedProcedure
+    .input(z.object({ now: z.date().optional() }).optional())
+    .query(async ({ ctx, input }) => {
+      const now = input?.now ?? new Date()
+      const [unsettled, decisions, untaggedDecisions, unendorsedForecasts] =
+        await Promise.all([
+          prisma.question.findMany({
+            where: { userId: ctx.userId, resolved: false },
+            select: {
+              id: true,
+              title: true,
+              resolveBy: true,
+              decisionId: true,
+            },
+            orderBy: { resolveBy: "asc" },
+          }),
+          prisma.decision.findMany({
+            where: { userId: ctx.userId },
+            select: {
+              id: true,
+              rubricVersion: true,
+              lockedAt: true,
+              action: true,
+              actionDueAt: true,
+              executions: { select: { kind: true, occurredAt: true } },
+              rubricEntries: { select: { itemKey: true, status: true } },
+              questions: { select: { resolved: true } },
+            },
+          }),
+          prisma.decision.count({ where: untaggedDecisionWhere(ctx.userId) }),
+          prisma.forecast.count({
+            where: { userId: ctx.userId, endorsed: false },
+          }),
+        ])
+
+      // 「清单从未记录」拆成"还救得回来"与"已披露"（ADR-0039 第一点）：前者是可执行
+      // 的动作，后者只是事实。混成一个数字，就把"待办"与"没法定论"混成了一件事。
+      let unfrozen = 0
+      let frozen = 0
+      let decisionsWithoutPredictions = 0
+      // ADR-0041：动作读数与清单读数互不影响，所以先算动作，再决定是否数清单。
+      const actions = { planned: 0, overdue: 0, executed: 0, abandoned: 0 }
+      for (const decision of decisions) {
+        if (decision.questions.length === 0) decisionsWithoutPredictions += 1
+
+        const actionState = actionStateOf(decision, now)
+        if (actionState === "PLANNED") actions.planned += 1
+        if (actionState === "OVERDUE") actions.overdue += 1
+        if (actionState === "EXECUTED") actions.executed += 1
+        if (actionState === "ABANDONED") actions.abandoned += 1
+
+        const completion = deriveRubricCompletion(
+          decision.rubricEntries,
+          decision.rubricVersion,
+        )
+        if (completion.unrecorded.length === 0) continue
+
+        // 冻结判据只有一处实现：把仓库里的 questions 映射成它的入参，而不是在
+        // 这里重写一遍"算不算已揭晓"。
+        const lock = decisionLockOf(
+          decision.questions.map((question, index) => ({
+            id: String(index),
+            title: "",
+            resolved: question.resolved,
+          })),
+          decision.lockedAt,
+        )
+        if (lock.locked) frozen += 1
+        else unfrozen += 1
+      }
+
+      return {
+        generatedAt: now,
+        due: summarizeDue(unsettled, now),
+        nearest: nearestDue(unsettled, now).map((prediction) => ({
+          id: prediction.id,
+          title: prediction.title,
+          dueAt: prediction.resolveBy,
+          decisionId: prediction.decisionId,
+        })),
+        rubricNeverRecorded: { unfrozen, frozen },
+        actions,
+        untaggedDecisions,
+        unendorsedForecasts,
+        decisionsWithoutPredictions,
+        // 下钻命令随返回给出（ADR-0039 第六点）：只许指向真实存在的命令，
+        // 由 `docs_commands.test.ts` 守着。
+        seeAlso: BRIEF_SEE_ALSO,
       }
     }),
 

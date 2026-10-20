@@ -59,7 +59,7 @@
 
 - **新增 `Decision` 模型**：叙事字段 + 归属用户 + 时间戳。
   - `statement`（决策陈述，必填）、`reasoning`（理由）、`expectedOutcome`（预期后果）、`knownInfo`（当时已知）、`unknownInfo`（当时未知）。
-  - `userId`（决策者）、`createdAt`、以及**清单锁定时间** `rubricLockedAt`（见下）。
+  - `userId`（决策者）、`createdAt`、以及**锁定时间** `lockedAt`（清单与叙事共用同一个判据，见下；ADR-0037 由 `rubricLockedAt` 改名）。
   - `rubricVersion`（**决策版本**，见下）：该决策计分时适用的条目集合版本。
   - `rubricRecordedAfterOutcomeAt`：清单写在**结果揭晓之后**的时点标记（ADR-0020 第六点）。
 - **新增清单完成情况记录表**（每条一行，而非只存一个总分）：
@@ -91,8 +91,8 @@
 
 ### 数据流与不变量
 
-- 决策叙事与清单可在**决策当时及之后**修改，直到该决策下**任一 Prediction 被结算**——此后清单锁定。这是"清单在决策当时填写"的可执行化，也是 Resulting 的结构性防线。
-- **锁单向、不可回退**：判据 = "该决策下有已结算的 Prediction"（事实）**或** 已记录的 `rubricLockedAt`。撤销结算会打印出 `resolved = false`，这时只看事实就会重新开门（`undoQuestionResolution` 正是这条路径）；已结算的 Prediction 也不允许解绑。
+- 决策叙事与清单可在**决策当时及之后**修改，直到该决策下**任一 Prediction 被结算**——此后清单锁定。这是"清单在决策当时填写"的可执行化，也是 Resulting 的结构性防线。**（ADR-0037 收窄：揭晓后叙事与清单一起冻结，事后表达走独立的 `record-reflection`；"叙事仍可补充"的口径不再成立。）**
+- **锁单向、不可回退**：判据 = "该决策下有已结算的 Prediction"（事实）**或** 已记录的 `lockedAt`。撤销结算会打印出 `resolved = false`，这时只看事实就会重新开门（`undoQuestionResolution` 正是这条路径）；已结算的 Prediction 也不允许解绑。
 - 锁定时点在两处写入：**结算路径**（该 Question 已属某 Decision 时）与**挂载一条已结算的 Prediction** 时。
 - **清单写在结果揭晓之后的会被标记**（`rubricRecordedAfterOutcomeAt`）："先建决策 → 补满清单 → 再挂一条已结算的 Prediction"是唯一剩下的绕过路径（写清单时该决策名下没有任何预测），标记让它在复盘时不再与"当初填的"同形。
 - 质量分**只**依赖清单完成情况，不读任何结算结果，因此与结果分天然脱钩。

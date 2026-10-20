@@ -30,9 +30,9 @@ export const RUBRIC_VERSIONS: readonly RubricVersion[] = [
     version: 1,
     items: [
       { key: "alternatives", label: "备选方案 ≥ 2" },
-      { key: "premortem", label: "事前剖析" },
+      { key: "premortem", label: "事前剖析（下注前写下会怎么失败）" },
       { key: "baseRate", label: "参考基准率" },
-      { key: "whatIfWrong", label: "写下「我可能错在哪」" },
+      { key: "whatIfWrong", label: "写下「我可能错在哪」（下注前）" },
       { key: "falsifiableCriteria", label: "判据可证伪且已冻结" },
     ],
   },
@@ -73,8 +73,15 @@ export type RubricEntry = { itemKey: string; status: RubricStatus }
 export type RubricCompletion = {
   done: number
   total: number
-  /** 漏掉的步骤。这是清单相对一个分值唯一多出来的东西。 */
+  /**
+   * 记了「没做到」的条目（ADR-0038）。
+   *
+   * 与 `unrecorded` 分开：前者是"知道该做但没做"，后者是"没记"——对策不同，
+   * 而把两者折成同一个数组，正是这条 ADR 要修的同形问题。
+   */
   missing: string[]
+  /** 从未记录过的条目（缺失，不是第三取值）。 */
+  unrecorded: string[]
 }
 
 function rubricItemKeysOf(version: number): ReadonlySet<string> {
@@ -135,9 +142,22 @@ export function completionOfItems(
   items: readonly RubricItem[],
 ): RubricCompletion {
   const keys = items.map((item) => item.key)
-  const missing = keys.filter((key) => rubricStatusOf(entries, key) !== "DONE")
+  // 三态（ADR-0038）：`rubricStatusOf` 对没记录的条目返回 `undefined`。把它读成
+  // 「没做到」会让"一步都没记"和"一步都没做到"同形——两者对策完全不同。
+  const missing: string[] = []
+  const unrecorded: string[] = []
+  for (const key of keys) {
+    const status = rubricStatusOf(entries, key)
+    if (status === "NOT_DONE") missing.push(key)
+    if (status === undefined) unrecorded.push(key)
+  }
 
-  return { done: keys.length - missing.length, total: keys.length, missing }
+  return {
+    done: keys.length - missing.length - unrecorded.length,
+    total: keys.length,
+    missing,
+    unrecorded,
+  }
 }
 
 /**
@@ -197,7 +217,7 @@ export type LockablePrediction = {
  * 返回"是哪个预测导致的"，因为拒绝写入时告诉当事人原因比一句"已锁定"有用
  * 得多——他会立刻明白是哪次结算关上了这扇门。
  *
- * 它是锁定判据的**一半**：另一半是已记录的 `rubricLockedAt`（见 `rubricLockOf`）。
+ * 它是冻结判据的**一半**：另一半是已记录的 `lockedAt`（见 `decisionLockOf`）。
  * 两者各补对方的洞——只看事实，撤销结算（`undoQuestionResolution` 把 `resolved`
  * 置回 `false`）就能把门重新打开；只看时点，"结算已发生、时点还没写上"的那
  * 一瞬间会漏。
@@ -214,13 +234,15 @@ export function findLockingPrediction(
 }
 
 /**
- * 锁定态。`byPrediction*` 为 null 表示锁不是由"现在还挂着的那条已结算预测"给出的
+ * 冻结态（ADR-0037：同一判据现在管两样东西——清单只读、叙事冻结）。
+ *
+ * `byPrediction*` 为 null 表示锁不是由"现在还挂着的那条已结算预测"给出的
  * （它被撤销结算或被删了）；`lockedAt` 是已记录的第一个锁定时点。
  *
- * 加进 `lockedAt` 之后，锁在**结构上**不可回退：清单的写入口问的都是这一个函数，
- * 而它一旦记住时就永远记住。
+ * 加进 `lockedAt` 之后，锁在**结构上**不可回退：清单写入口与叙事写入口问的
+ * 都是这一个函数，而它一旦记住时就永远记住。
  */
-export type RubricLock = {
+export type DecisionLock = {
   locked: boolean
   byPredictionId: string | null
   byPredictionTitle: string | null
@@ -231,10 +253,10 @@ export type RubricLock = {
  * 锁定态 = 事实 ∨ 已记录的时点，只有一个算法——路由写清单、路由返回锁定态、
  * 页面渲染锁定提示，问的都是同一个问题。
  */
-export function rubricLockOf(
+export function decisionLockOf(
   predictions: LockablePrediction[],
   recordedLockAt: Date | null,
-): RubricLock {
+): DecisionLock {
   const locking = findLockingPrediction(predictions)
   // `?? null`：Prisma 给的是 `null`，但手工构造的 Decision 对象（测试、fixture）
   // 可能整个没有这个键。`undefined !== null` 会被读成"锁过"，于是一个从未锁过的
@@ -247,4 +269,48 @@ export function rubricLockOf(
     byPredictionTitle: locking?.title ?? null,
     lockedAt,
   }
+}
+
+export type RubricEvidence = {
+  itemKey: string
+  /** 库里能核到的事实。不含评价——写成"你做到了"就是偷偷的推导计分。 */
+  evidence: string
+}
+
+/**
+ * 可派生的事实（ADR-0038 第四点）：**只披露，不计分**。
+ *
+ * 为什么不计分：`resolutionCriteria` 是创建预测时的必填项（`agent_router` 的
+ * `min(1)`），所以「判据非空且无修订记录」对任何有预测的决策几乎都成立——它是
+ * schema 强制出来的别名，不是一条会失败的清单项。把它推导成 DONE 等于往分母里
+ * 塞一个恒真项，还会让分值出现第二个写手（记录之外多一个推导）。
+ *
+ * 措辞是硬约束：说「库里能核到什么」，不说「你做到了」。第一句是证据，第二句
+ * 是评价——而评价不可由代码给出（ADR-0016）。
+ */
+export function derivableRubricEvidence(
+  questions: { resolutionCriteria: string | null }[],
+  revisions: { field: string }[],
+): RubricEvidence[] {
+  if (!questions || questions.length === 0) return []
+
+  // fixture 里可能整个没有 `resolutionCriteria`（那正是"未记录"的一种）。
+  // 用 typeof 判据而不是 `!== null`：`undefined.trim()` 会当场抛错，而一条**读不到**
+  // 的字段不该把整个复盘视图打崩。
+  const allHaveCriteria = questions.every(
+    (question) =>
+      typeof question.resolutionCriteria === "string" &&
+      question.resolutionCriteria.trim() !== "",
+  )
+  const hasRevision = (revisions ?? []).some(
+    (revision) => revision.field === "resolutionCriteria",
+  )
+  if (!allHaveCriteria || hasRevision) return []
+
+  return [
+    {
+      itemKey: "falsifiableCriteria",
+      evidence: `该决策下 ${questions.length} 条预测的判据均存在，且库里没有它们的修订记录（派生自库，不计入完成度）`,
+    },
+  ]
 }

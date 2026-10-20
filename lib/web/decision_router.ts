@@ -13,7 +13,8 @@ import {
   RubricEntry,
   deriveRubricCompletion,
   findLockingPrediction,
-  rubricLockOf,
+  decisionLockOf,
+  derivableRubricEvidence,
   rubricWrittenAfterOutcome,
   validateRubricEntries,
 } from "./decision_rubric"
@@ -22,7 +23,16 @@ import {
   propagateDecisionDomainsToQuestion,
   resolveExistingDomains,
 } from "./domain_tags"
-import { missingRevisionReason, planNarrativeRevisions } from "./revisions"
+import {
+  actionStateOf,
+  executionConflict,
+  normalizeActionText,
+} from "./decision_action"
+import {
+  missingRevisionReason,
+  planActionRevisions,
+  planNarrativeRevisions,
+} from "./revisions"
 import { settlementLabelOf, settlementScopeOf } from "./settlement_scope"
 
 /**
@@ -111,10 +121,26 @@ function toNarrative(input: DecisionNarrativeInput): DecisionNarrative {
 
 export const decisionRouter = router({
   create: ownedProcedure
-    .input(narrativeInput.extend({ domains: z.string().array().optional() }))
+    .input(
+      narrativeInput.extend({
+        domains: z.string().array().optional(),
+        // ADR-0041：动作是"当初的记录"的一半，与叙事同时写下。
+        action: z.string().nullish(),
+        actionDueAt: z.date().nullish(),
+      }),
+    )
     .mutation(async ({ input, ctx }) => {
       // 先把校验/归一化跑完再落库：非法叙事不该留下任何痕迹。
       const narrative = toNarrative(input)
+      const action = normalizeActionText(input.action)
+      const actionDueAt = input.actionDueAt ?? null
+      if (actionDueAt !== null && action === null) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            "给了承诺时点却没有动作：--action-due 必须与 --action 一起给出（ADR-0041）",
+        })
+      }
       // ADR-0030 §七：未知领域大声失败（由此处解析），绝不静默造词。
       const domains = input.domains?.length
         ? await resolveExistingDomains(ctx.userId, input.domains)
@@ -124,6 +150,8 @@ export const decisionRouter = router({
       const data: Prisma.DecisionUncheckedCreateInput = {
         userId: ctx.userId,
         ...narrative,
+        action,
+        actionDueAt,
         // ADR-0020 第四点：新建的决策记下它属于哪个决策版本。之后条目集合演进
         // （新增 / 删除条目）不会改写它的分。
         rubricVersion: CURRENT_RUBRIC_VERSION,
@@ -139,20 +167,36 @@ export const decisionRouter = router({
     .input(
       z.object({
         limit: z.number().int().positive().max(100).optional(),
+        /**
+         * 只列「清单从未记录」的决策（ADR-0038 的读数，`list-decisions --rubric-missing`
+         * 的下钻）。它与简报那一栏用**同一个派生**，否则两个地方会说两套话。
+         */
+        rubricMissing: z.boolean().optional(),
+        /**
+         * 只列"承诺到期却没执行也没放弃"的决策（ADR-0041 的下钻）。
+         * 判定用 `actionStateOf`，与简报同一处派生。
+         */
+        actionOverdue: z.boolean().optional(),
       }),
     )
     .query(async ({ input, ctx }) => {
+      const now = new Date()
+      const filteredInMemory = input.rubricMissing || input.actionOverdue
+
       const decisions = await prisma.decision.findMany({
         where: { userId: ctx.userId },
         orderBy: { createdAt: "desc" },
-        take: input.limit ?? 20,
+        // 过滤要在内存里做：判定依赖每个决策**自己的** `rubricVersion`（代码常量）
+        // 与动作状态的"现在已经过了吗"，Prisma 都没有可比较的列。因此过滤时不先截断。
+        take: filteredInMemory ? undefined : input.limit ?? 20,
         include: {
           rubricEntries: true,
           questions: { select: { id: true, title: true, resolved: true } },
+          executions: { select: { kind: true, occurredAt: true } },
         },
       })
 
-      return decisions.map((decision) => ({
+      const items = decisions.map((decision) => ({
         id: decision.id,
         statement: decision.statement,
         createdAt: decision.createdAt,
@@ -162,7 +206,11 @@ export const decisionRouter = router({
           decision.rubricEntries,
           decision.rubricVersion,
         ),
-        rubricLock: rubricLockOf(decision.questions, decision.rubricLockedAt),
+        rubricLock: decisionLockOf(decision.questions, decision.lockedAt),
+        // ADR-0041：动作与它的派生状态（未记录 / 计划中 / 逾期 / 已执行 / 已放弃）
+        action: decision.action,
+        actionDueAt: decision.actionDueAt,
+        actionState: actionStateOf(decision, now),
         /**
          * 结果侧只给**事实**（已揭晓 / 共几条），不给一个聚合分数。
          * 把多条 Prediction 的分数聚成一个"决策结果分"是一个新指标，
@@ -174,6 +222,17 @@ export const decisionRouter = router({
             .length,
         },
       }))
+
+      // 两个 flag 同时给 = **交集**。用三元表达式会让后一个被静默丢弃，
+      // 而"静默"正是本仓库最不能容忍的失败方式（ADR-0039 §六）。
+      const filtered = items
+        .filter(
+          (item) => !input.rubricMissing || item.rubric.unrecorded.length > 0,
+        )
+        .filter(
+          (item) => !input.actionOverdue || item.actionState === "OVERDUE",
+        )
+      return input.limit ? filtered.slice(0, input.limit) : filtered
     }),
 
   byId: ownedProcedure
@@ -190,6 +249,10 @@ export const decisionRouter = router({
           // 叙事改写的留痕必须在**复盘视图**里看得见，否则留痕没有意义
           // （ADR-0012 的 Consequences）。
           revisions: { orderBy: { createdAt: "asc" } },
+          // ADR-0037：事后表达与当初的记录**并列**呈现，两栏不合并
+          reflections: { orderBy: { createdAt: "asc" } },
+          // ADR-0041：执行事实只增不改，因此按发生顺序列出即可
+          executions: { orderBy: { occurredAt: "asc" } },
           questions: {
             include: { questionScores: { where: { userId: ctx.userId } } },
           },
@@ -198,6 +261,17 @@ export const decisionRouter = router({
       if (!decision) {
         throw new TRPCError({ code: "NOT_FOUND", message: NOT_FOUND_MESSAGE })
       }
+
+      // ADR-0038 第四点：判据的修订记录挂在 **Question** 上（`Revision.questionId`），
+      // 而 `resolutionCriteria` 从不以 `decisionId` 落库。查错表不会报错——它只会让
+      // “未被修订”这道守卫永远成立，于是证据行说出一句与库相反的话。
+      const criteriaRevisions = await prisma.revision.findMany({
+        where: {
+          questionId: { in: decision.questions.map((question) => question.id) },
+          field: "resolutionCriteria",
+        },
+        select: { field: true },
+      })
 
       return {
         ...decision,
@@ -219,7 +293,14 @@ export const decisionRouter = router({
           decision.rubricEntries,
           decision.rubricVersion,
         ),
-        rubricLock: rubricLockOf(decision.questions, decision.rubricLockedAt),
+        rubricLock: decisionLockOf(decision.questions, decision.lockedAt),
+        // ADR-0041：动作状态是推导值（不落库）
+        actionState: actionStateOf(decision, new Date()),
+        // ADR-0038 第四点：库里能核到的事实——**披露，不计分**。
+        rubricEvidence: derivableRubricEvidence(
+          decision.questions,
+          criteriaRevisions,
+        ),
       }
     }),
 
@@ -245,6 +326,7 @@ export const decisionRouter = router({
           decisionId: true,
           resolved: true,
           resolvedAt: true,
+          resolutionCriteria: true,
         },
       })
       if (!question) {
@@ -271,10 +353,10 @@ export const decisionRouter = router({
       if (question.resolved) {
         // ADR-0020 第五点：挂上一条已结算的 Prediction 时立刻记下锁定时点，避免出现
         // "锁已生效（判据来自事实）而时点为空"的状态——复盘要用这个时点。
-        if (decision.rubricLockedAt === null) {
+        if (decision.lockedAt === null) {
           await prisma.decision.update({
             where: { id: decision.id },
-            data: { rubricLockedAt: new Date() },
+            data: { lockedAt: new Date() },
           })
         }
 
@@ -297,7 +379,35 @@ export const decisionRouter = router({
         }
       }
 
-      return updated
+      // ADR-0038 第五点：能核到的事实出现时**提示而不代填**——分值的唯一写手仍是
+      // 记录本身，推导只提供一句"要不要记下来"。已冻结时清单只读，不提示。
+      //
+      // 冻结判据只有一处实现（`decisionLockOf`）：不能只看刚挂上的这一条——该决策下
+      // 另一条预测早已结算、而 `lockedAt` 还没写入的存量行会让这里判成"未冻结"，
+      // 于是提示一条注定被 `setRubric` 以 CONFLICT 拒绝的命令。
+      const lock = decisionLockOf(
+        await prisma.question.findMany({
+          where: { decisionId: decision.id },
+          select: { id: true, title: true, resolved: true },
+        }),
+        decision.lockedAt,
+      )
+      const rubricSuggestions = lock.locked
+        ? []
+        : derivableRubricEvidence(
+            [{ resolutionCriteria: question.resolutionCriteria }],
+            // 判据的修订记录挂在 Question 上（`Revision.questionId`）——按 decisionId
+            // 查只会永远查不到，于是“未被修订”变成一句无人核验的断言。
+            await prisma.revision.findMany({
+              where: {
+                questionId: question.id,
+                field: "resolutionCriteria",
+              },
+              select: { field: true },
+            }),
+          )
+
+      return { ...updated, rubricSuggestions }
     }),
 
   /**
@@ -335,14 +445,15 @@ export const decisionRouter = router({
     }),
 
   /**
-   * 补充/修改叙事（ADR-0012 × ADR-0020）。
+   * 补充/修改叙事（ADR-0012 × ADR-0037）。
    *
-   * 刻意**不**检查清单锁定：锁定只作用于清单。叙事不进任何分值，所以事后补充它
-   * 不产生"把当初说圆"的激励扭曲；而"现在回看，我当时低估了什么"恰恰是
-   * 复盘最该被记下来的东西。
+   * **揭晓后冻结**：与清单同一个判据、同一个函数（`decisionLockOf`）。冻结时连空白
+   * 一并冻结——冻结时是空白，就永远是空白，因为"当时没记"本身就是一条记录。
+   * 事后表达走 `recordReflection`：它独立成栏、带时点，不必读时间戳就知道那是
+   * 「现在怎么看」而不是「当时怎么想」。
    *
-   * 但它不是无痕的：**改写（或清空）已填写的内容必须带理由并留一条修订**
-   * （ADR-0012）；给**空白**字段补写不受限——那不是改写，而是当初就没记。
+   * 揭晓前仍是"可改、必留痕"（ADR-0012）：**改写（或清空）已填写的内容必须带理由
+   * 并留一条修订**；给**空白**字段补写不受限——那不是改写，而是当初就没记。
    *
    * 局部更新：没提到的字段保持原值。快照 → 留痕 → 更新必须同事务（ADR-0012），
    * 否则更新失败会留下并未发生的修订。
@@ -356,6 +467,9 @@ export const decisionRouter = router({
         expectedOutcome: z.string().nullish(),
         knownInfo: z.string().nullish(),
         unknownInfo: z.string().nullish(),
+        // ADR-0041：动作属于"当初的记录"，与叙事共用这一条写入路径与留痕规则
+        action: z.string().nullish(),
+        actionDueAt: z.date().nullish(),
         reason: z.string().nullish(),
       }),
     )
@@ -374,6 +488,16 @@ export const decisionRouter = router({
         })
       }
 
+      // ADR-0041：动作只纳入"这次真正提到的字段"，与叙事局部更新同一语义。
+      const actionPatch: { action?: string | null; actionDueAt?: Date | null } =
+        {}
+      if (patchInput.action !== undefined) {
+        actionPatch.action = normalizeActionText(patchInput.action)
+      }
+      if (patchInput.actionDueAt !== undefined) {
+        actionPatch.actionDueAt = patchInput.actionDueAt ?? null
+      }
+
       return prisma.$transaction(async (tx) => {
         // 属主条件写进查询条件（与 `assertOwnedDecision` 是同一条边界），但这里
         // 必须在**事务里**读快照：快照 → 留痕 → 更新同事务（ADR-0012）。
@@ -387,7 +511,55 @@ export const decisionRouter = router({
           })
         }
 
-        const revisions = planNarrativeRevisions(before, patch)
+        // ADR-0037：揭晓后叙事连同空白一并冻结。判据与清单**同一个函数**——两处
+        // 各写一遍"算不算揭晓"，迟早会给出两个答案。
+        const predictions = await tx.question.findMany({
+          where: { decisionId },
+          select: { id: true, title: true, resolved: true },
+        })
+        const lock = decisionLockOf(predictions, before.lockedAt)
+        const narrativeChanges = Object.entries(patch).some(
+          ([key, value]) => value !== (before as Record<string, unknown>)[key],
+        )
+        const actionChanges =
+          (actionPatch.action !== undefined &&
+            actionPatch.action !== before.action) ||
+          (actionPatch.actionDueAt !== undefined &&
+            (actionPatch.actionDueAt?.getTime() ?? null) !==
+              (before.actionDueAt?.getTime() ?? null))
+        const hasChanges = narrativeChanges || actionChanges
+        if (lock.locked && hasChanges) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: lock.byPredictionTitle
+              ? `叙事已冻结：「${lock.byPredictionTitle}」已结算。揭晓后的事后表达请用 record-reflection——它独立成栏、带时点，不会与当初写下的内容同形（ADR-0037）。`
+              : // 只剩时点成立：导致冻结的那条 Prediction 已不在（撤销了结算或被删）。
+                // 这时更要说清依据，否则当事人看到"已冻结"却找不到是哪次结算关的门。
+                `叙事已冻结：该决策的清单与叙事已于 ${lock.lockedAt?.toISOString()} 冻结，当时有 Prediction 已结算；那次结算现已被撤销（或该预测已被删掉），但冻结不回退（ADR-0037）。事后表达请用 record-reflection。`,
+          })
+        }
+
+        // 承诺时点不能脱离动作存在（ADR-0041）：否则库里会出现"有个期限但没说做什么"。
+        // 三态：`undefined` = 这次没提；`null` = 显式清空；string = 新值。用 `??` 会把
+        // "显式清空"并进"没提"，于是清空动作时守卫看的是旧动作——库里留下"有期限没动作"。
+        const actionAfterPatch =
+          actionPatch.action !== undefined ? actionPatch.action : before.action
+        const dueAfterPatch =
+          actionPatch.actionDueAt !== undefined
+            ? actionPatch.actionDueAt
+            : before.actionDueAt
+        if (dueAfterPatch !== null && actionAfterPatch === null) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message:
+              '给了承诺时点却没有动作：清空动作时也必须清空 actionDueAt（ADR-0041）。CLI 写法：--action "" --action-due ""',
+          })
+        }
+
+        const revisions = [
+          ...planNarrativeRevisions(before, patch),
+          ...planActionRevisions(before, actionPatch),
+        ]
         const missingReason = missingRevisionReason(
           revisions,
           reason ?? undefined,
@@ -408,7 +580,81 @@ export const decisionRouter = router({
           })
         }
 
-        return tx.decision.update({ where: { id: decisionId }, data: patch })
+        return tx.decision.update({
+          where: { id: decisionId },
+          data: { ...patch, ...actionPatch },
+        })
+      })
+    }),
+
+  /**
+   * 事后表达（ADR-0037）：只增不改，且**不设时机门槛**。
+   *
+   * 为什么没有门槛：ADR-0011 允许"0 条预测"的决策，而放弃一个决策正是最该复盘的
+   * 时刻；若要求"揭晓后才能写"，那种决策永远无法复盘。它也不必靠门槛防冒充——
+   * 它永远不冒充"当初"：每条自带 `createdAt`，渲染时与当初的记录**分栏并列**。
+   *
+   * 为什么只增不改：一条可编辑的复盘字段会把同一个病挪个位置——后来的复盘盖掉
+   * 前面的复盘，而覆盖同样无声（ADR-0012 的立论）。
+   */
+  recordReflection: ownedProcedure
+    .input(z.object({ decisionId: z.string(), body: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      const body = input.body.trim()
+      if (body.length === 0) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "复盘内容不能为空",
+        })
+      }
+
+      await assertOwnedDecision(input.decisionId, ctx.userId)
+
+      return prisma.decisionReflection.create({
+        data: { decisionId: input.decisionId, body },
+      })
+    }),
+
+  /**
+   * 记录一次执行事实（ADR-0041）：**只增不改**，且不设时机门槛。
+   *
+   * 为什么允许在揭晓后写：多阶段决策里揭晓可能早于最后一次执行（"分三期建仓"，
+   * 首期后就有预测结算）。这与承诺半边正好相反——冻结防的是"改写承诺"，
+   * 只增防的是"改写事实"。
+   */
+  recordExecution: ownedProcedure
+    .input(
+      z.object({
+        decisionId: z.string(),
+        kind: z.enum(["EXECUTED", "ABANDONED"]),
+        /** 事实发生的时点；省略 = 现在。可回填——先做事后记录是常态。 */
+        occurredAt: z.date().optional(),
+        note: z.string().nullish(),
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      const decision = await assertOwnedDecision(input.decisionId, ctx.userId)
+
+      const executions = await prisma.decisionExecution.findMany({
+        where: { decisionId: decision.id },
+        select: { kind: true, occurredAt: true },
+      })
+
+      const conflict = executionConflict(input.kind, {
+        ...decision,
+        executions,
+      })
+      if (conflict) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: conflict })
+      }
+
+      return prisma.decisionExecution.create({
+        data: {
+          decisionId: decision.id,
+          kind: input.kind,
+          occurredAt: input.occurredAt ?? new Date(),
+          note: input.note?.trim() || null,
+        },
       })
     }),
 
@@ -434,14 +680,14 @@ export const decisionRouter = router({
       })
 
       const locking = findLockingPrediction(predictions)
-      const lock = rubricLockOf(predictions, decision.rubricLockedAt)
+      const lock = decisionLockOf(predictions, decision.lockedAt)
       if (lock.locked) {
         // 顺带记下锁定时点。只写一次、永不回退：结算不可逆，所以锁也是单向的。
         // 先写再抛：写入被拒与"何时开始拒"是两件事，后者对复盘有用。
-        if (decision.rubricLockedAt === null) {
+        if (decision.lockedAt === null) {
           await prisma.decision.update({
             where: { id: decision.id },
-            data: { rubricLockedAt: new Date() },
+            data: { lockedAt: new Date() },
           })
         }
 

@@ -76,16 +76,17 @@ async function dbResolveQuestion(
     },
   })
 
-  // ADR-0020 第五点：该 Question 属于某个决策时，结算路径写入锁定时点（只写一次、
-  // 永不清除——所以 `undoQuestionResolution` 不需要也不应该碰它）。写在结算路径上，
-  // 而不是"拒绝写入时才发现"的那条路径上：后者会让"锁已生效而时点为空"成为常态，
-  // 而复盘要用这个时点。
+  // ADR-0020 第五点 / ADR-0037：该 Question 属于某个决策时，结算路径写入锁定时点
+  // （只写一次、永不清除——所以 `undoQuestionResolution` 不需要也不应该碰它）。
+  // 同一个时点现在管两样东西：清单只读 + 叙事冻结。
+  // 写在结算路径上，而不是"拒绝写入时才发现"的那条路径上：后者会让"锁已生效而
+  // 时点为空"成为常态，而复盘要用这个时点。
   //
   // 这里刻意**不** import 决策模块：质量分与结果分的脱钩由 `.eslintrc.json` 的
   // `no-restricted-imports` 守着，这条写入只是一个指向外键的字段更新。
   await prisma.decision.updateMany({
-    where: { questions: { some: { id: questionid } }, rubricLockedAt: null },
-    data: { rubricLockedAt: new Date() },
+    where: { questions: { some: { id: questionid } }, lockedAt: null },
+    data: { lockedAt: new Date() },
   })
 
   return question

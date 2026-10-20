@@ -465,14 +465,20 @@ model Decision {
   expectedOutcome String?                  @db.Text
   knownInfo       String?                  @db.Text
   unknownInfo     String?                  @db.Text
-  // ADR-0020：该决策下任一 Prediction 结算后清单锁定，锁定即写时间（不回退）
-  rubricLockedAt  DateTime?
+  // ADR-0037：同一判据现在管两样东西——该决策下任一 Prediction 结算后**清单只读、
+  // 叙事冻结**，锁定即写时间（不回退）。字段名不叫 rubricLockedAt，因为它不只管清单，
+  // 而且写入的是"观察到的时点"（通常略晚于 resolvedAt），不是揭晓时点本身。
+  lockedAt        DateTime?
   // ADR-0020 第四点：该决策计分时适用的清单条目集合版本。条目增删只能新建版本，
   // 既有版本的条目列表不得改写——历史决策因此按自己的版本解释。
   rubricVersion   Int                      @default(1)
   // ADR-0020 第六点：清单写在"结果揭晓之后"的时点标记。只在对一条**已结算**的
   // Prediction 做挂载时写下，且只写一次——那条路径是唯一能绕过锁定的绕道。
   rubricRecordedAfterOutcomeAt DateTime?
+  // ADR-0041：决策动作（承诺半边）。它属于"当初的记录"，因此改写须留痕、
+  // 揭晓后与叙事一同冻结（同一个 decisionLockOf）。
+  action          String?                  @db.Text
+  actionDueAt     DateTime?
   questions       Question[]
   rubricEntries   DecisionRubricEntry[]
   // 领域权威在 Decision（ADR-0030）：用户在这里表达一次"这条决策属于哪个领域"，
@@ -480,6 +486,11 @@ model Decision {
   tags            Tag[]
   // 叙事字段的改写留痕（ADR-0012）：旧值 / 新值 / 时间 / 理由
   revisions       Revision[]
+  // 事后表达通道（ADR-0037）：与叙事字段物理分开、只增不改，因此不必读时间戳
+  // 就知道它是"现在怎么看"而不是"当时怎么想"。
+  reflections     DecisionReflection[]
+  // ADR-0041：执行事实（只增不改、不冻结——多阶段执行可能晚于揭晓）
+  executions      DecisionExecution[]
 
   @@index([userId])
 }
@@ -496,6 +507,40 @@ model DecisionRubricEntry {
 
   @@unique([decisionId, itemKey])
   @@index([decisionId])
+}
+
+/// 事后表达（ADR-0037）：**只增不改、不可删**。每条自带时点，因此不必读时间戳
+/// 就知道它是事后的；不给 `updatedAt`——那会暗示可改，而"后来的复盘盖掉前面的
+/// 复盘"正是这条 ADR 要堵的无声改写。
+model DecisionReflection {
+  id         String   @id @default(cuid())
+  decisionId String
+  decision   Decision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+  body       String   @db.Text
+  createdAt  DateTime @default(now())
+
+  @@index([decisionId])
+}
+
+/// 执行事实（ADR-0041）：**只增不改**。一次决策可以有多次执行事件（多阶段执行），
+/// 因此它是一张表而不是几个时点字段。`ABANDONED` 是独立取值——否则"明确放弃"
+/// 会被永久读成"逾期未做"。
+model DecisionExecution {
+  id         String        @id @default(cuid())
+  decisionId String
+  decision   Decision      @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+  kind       ExecutionKind
+  /// 事实发生的时点（可回填：先做事后记录是常态）
+  occurredAt DateTime      @default(now())
+  note       String?       @db.Text
+  createdAt  DateTime      @default(now())
+
+  @@index([decisionId])
+}
+
+enum ExecutionKind {
+  EXECUTED
+  ABANDONED
 }
 
 // ADR-0020：只有二值，没有"不适用"——那是个自我开脱的口子。

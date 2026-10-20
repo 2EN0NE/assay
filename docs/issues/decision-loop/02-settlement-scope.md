@@ -15,7 +15,7 @@
 - 写入路径三条全部记确认者：`agent.settle`、`agent.decideProposal`（接受时）、Web/API 的 `resolveQuestion`。
 - 过滤落在**计量入口**：`resolution.ts` 的 `meteredForecasts`（= 已背书 + 结算生效）与 `pages/api/calibration_graph.ts`。呈现层不动。
 - 新增 `agent.recordResolutionSource` + CLI `record-resolution-source`（§五 的出口）：写来源后**重算**，使补录真的让样本计入；不触碰 `resolved`/`resolvedAt`/锁定时点，所以不是「撤销结算」。对等性例外表新增一条（待补：Web 入口随题目页写入口一起做，理由在表里）。
-- `agent.listDue` 改为 `{ settleable, dangling }`：悬空项各自带 `reason`（成因只有一种：来源缺失）。
+- `agent.listDue` 返回 `{ settleable, upcoming, dangling }`：`upcoming` 只在**未来分桶**下钻时有内容（ADR-0039 的 `--bucket`，未到期 ≠ 待办）；悬空项各自带 `reason`（成因只有一种：来源缺失）。
 
 ### 一个必须写明的后果（不是 bug，是 §六 的判定）
 
@@ -36,7 +36,7 @@
 - [x] 复盘与该条相关的队列输出能区分"未结算"与"悬空未结算"，并给出成因（来源缺失）
       — 两半都做了：队列侧 `listDue` 返回 `{ settleable, dangling }`（`reason` 只有一处；`danglingReason`）；复盘侧由 `decision.byId` 给出 `settlementScope` / `settlementLabel`，Web 与 CLI 共用同一份措辞
 - [x] 后来补录可核查来源 ⇒ 该题所有预测计入，且不触发任何锁定回退（ADR-0020）
-      — `recordResolutionSource` 写来源后 `rescoreResolvedQuestion`；不碰 `resolvedAt` 与 `rubricLockedAt`
+      — `recordResolutionSource` 写来源后 `rescoreResolvedQuestion`；不碰 `resolvedAt` 与 `lockedAt`
 - [x] 不引入 (question, user) 维度的确认状态表——悬空状态由过滤规则推导
       — 没有新表；判据是纯函数，状态是推导的
 

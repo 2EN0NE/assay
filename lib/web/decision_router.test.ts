@@ -18,7 +18,15 @@ jest.mock("../prisma", () => {
     },
     decisionRubricEntry: { upsert: jest.fn(), findMany: jest.fn() },
     question: { findFirst: jest.fn(), findMany: jest.fn(), update: jest.fn() },
-    revision: { createMany: jest.fn() },
+    revision: {
+      createMany: jest.fn(),
+      findMany: jest.fn().mockResolvedValue([]),
+    },
+    decisionReflection: { create: jest.fn() },
+    decisionExecution: {
+      create: jest.fn(),
+      findMany: jest.fn().mockResolvedValue([]),
+    },
     $transaction: jest.fn(),
   }
   // ADR-0012：快照 → 留痕 → 更新必须同事务。测试里让事务直接执行回调，并把同一个
@@ -82,7 +90,10 @@ function decisionFixture(overrides: Record<string, unknown> = {}) {
     knownInfo: null,
     unknownInfo: null,
     rubricVersion: 1,
-    rubricLockedAt: null,
+    lockedAt: null,
+    action: null,
+    actionDueAt: null,
+    executions: [],
     rubricRecordedAfterOutcomeAt: null,
     ...overrides,
   }
@@ -110,9 +121,11 @@ describe("decision.create（ADR-0019 · ticket 01）", () => {
     })
 
     expect(decisionCreate).toHaveBeenCalledWith({
-      data: {
+      data: expect.objectContaining({
         userId: "user-1",
         statement: "接这个 offer",
+        action: null,
+        actionDueAt: null,
         reasoning: null,
         expectedOutcome: null,
         knownInfo: "团队刚融资",
@@ -120,7 +133,7 @@ describe("decision.create（ADR-0019 · ticket 01）", () => {
         // ADR-0020 第四点：新建的决策记下所属决策版本，否则它没有可解释的
         // 条目集合（而回退到"当前版本"就是静默改写历史）
         rubricVersion: CURRENT_RUBRIC_VERSION,
-      },
+      }),
     })
     expect(result).toEqual({ id: "d1" })
   })
@@ -263,7 +276,8 @@ describe("decision.setRubric（ADR-0016 / ADR-0020 · ticket 02）", () => {
     expect(completion).toEqual({
       done: 3,
       total: 5,
-      missing: ["whatIfWrong", "falsifiableCriteria"],
+      missing: [],
+      unrecorded: ["whatIfWrong", "falsifiableCriteria"],
     })
   })
 })
@@ -286,7 +300,8 @@ describe("decision.byId 的清单完成度（ticket 02）", () => {
     expect(detail.rubric).toEqual({
       done: 1,
       total: 5,
-      missing: ["premortem", "baseRate", "whatIfWrong", "falsifiableCriteria"],
+      missing: ["premortem"],
+      unrecorded: ["baseRate", "whatIfWrong", "falsifiableCriteria"],
     })
     expect(detail.rubricEntries).toHaveLength(2)
   })
@@ -366,7 +381,7 @@ describe("decision.list（ticket 06）", () => {
         statement: "接 offer",
         createdAt: new Date("2026-01-01T00:00:00Z"),
         rubricVersion: 1,
-        rubricLockedAt: null,
+        lockedAt: null,
         rubricEntries: [
           { itemKey: "alternatives", status: "DONE" },
           { itemKey: "baseRate", status: "DONE" },
@@ -387,7 +402,8 @@ describe("decision.list（ticket 06）", () => {
         rubric: {
           done: 2,
           total: 5,
-          missing: ["premortem", "whatIfWrong", "falsifiableCriteria"],
+          missing: [],
+          unrecorded: ["premortem", "whatIfWrong", "falsifiableCriteria"],
         },
         rubricLock: {
           locked: true,
@@ -553,7 +569,7 @@ describe("decision.attachPrediction（ADR-0019 · ticket 03）", () => {
     expect(decisionUpdate).toHaveBeenCalledTimes(1)
     expect(decisionUpdate).toHaveBeenCalledWith({
       where: { id: "d1" },
-      data: { rubricLockedAt: expect.any(Date) },
+      data: { lockedAt: expect.any(Date) },
     })
   })
 
@@ -571,6 +587,32 @@ describe("decision.attachPrediction（ADR-0019 · ticket 03）", () => {
 
     expect(rubricFindMany).not.toHaveBeenCalled()
     expect(decisionUpdate).not.toHaveBeenCalled()
+  })
+
+  it("另一条预测已结算（lockedAt 仍为 null）⇒ 不提示：清单已冻结，提示只会指向一条必被拒的命令", async () => {
+    decisionFindFirst.mockResolvedValue(decisionFixture())
+    questionFindFirst.mockResolvedValue({
+      id: "q1",
+      decisionId: null,
+      resolved: false,
+      resolvedAt: null,
+      resolutionCriteria: "邮件中出现正式 offer",
+    })
+    questionUpdate.mockResolvedValue({ id: "q1", decisionId: "d1" })
+    // 该决策下另一条预测早已结算；`lockedAt` 还没写入（ADR-0020 建列前的存量行）。
+    questionFindMany.mockResolvedValue([
+      { id: "q2", title: "已结算的那条", resolved: true },
+    ])
+
+    const attached = await asOwner().attachPrediction({
+      decisionId: "d1",
+      questionId: "q1",
+    })
+
+    expect(attached.rubricSuggestions).toEqual([])
+    expect(questionFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { decisionId: "d1" } }),
+    )
   })
 })
 
@@ -624,7 +666,7 @@ describe("锁定不可被解绑绕过（ADR-0020 · 回归）", () => {
     // 事实侧已经消失——`undoQuestionResolution` 把 `resolved` 置回 false：
     // 这也是 ADR-0020 要把已记录的时点并进判据的唯一理由。
     decisionFindFirst.mockResolvedValue(
-      decisionFixture({ rubricLockedAt: new Date("2026-01-01T00:00:00Z") }),
+      decisionFixture({ lockedAt: new Date("2026-01-01T00:00:00Z") }),
     )
     questionFindMany.mockResolvedValue([
       { id: "q1", title: "6 月底前收到 offer", resolved: false },
@@ -641,7 +683,7 @@ describe("锁定不可被解绑绕过（ADR-0020 · 回归）", () => {
 
   it("未结算的预测即使所在决策已锁定，也可解绑：锁由已记录的时点保持，不靠挂着谁", () => {
     // 判据只看这条预测自己的 `resolved`：锁不靠"还挂着哪条预测"，因此解绑一条
-    // 未结算的预测不可能把门重新打开（这正是加进 rubricLockedAt 的代价换来的自由）
+    // 未结算的预测不可能把门重新打开（这正是加进 lockedAt 的代价换来的自由）
     questionFindFirst.mockResolvedValue({
       id: "q2",
       title: "还没结算",
@@ -700,7 +742,7 @@ describe("锁定不可被解绑绕过（ADR-0020 · 回归）", () => {
 
     expect(decisionUpdate).toHaveBeenCalledWith({
       where: { id: "d1" },
-      data: { rubricLockedAt: expect.any(Date) },
+      data: { lockedAt: expect.any(Date) },
     })
   })
 
@@ -766,12 +808,12 @@ describe("decision.setRubric 的锁定（ADR-0020 · ticket 04）", () => {
 
     expect(decisionUpdate).toHaveBeenCalledWith({
       where: { id: "d1" },
-      data: { rubricLockedAt: expect.any(Date) },
+      data: { lockedAt: expect.any(Date) },
     })
 
     decisionUpdate.mockClear()
     decisionFindFirst.mockResolvedValue(
-      decisionFixture({ rubricLockedAt: new Date("2026-01-01T00:00:00Z") }),
+      decisionFixture({ lockedAt: new Date("2026-01-01T00:00:00Z") }),
     )
 
     await expect(
@@ -900,35 +942,38 @@ describe("叙事：补写自由，改写必须带理由并留痕（ADR-0012 · t
   })
 })
 
-describe("锁定只作用于清单：叙事仍可补充（ADR-0020 · ticket 04）", () => {
-  it("清单被锁之后，叙事照样改得动", async () => {
+describe("揭晓后叙事冻结：事后表达走 reflection（ADR-0037 · ticket 04）", () => {
+  it("清单与叙事一起冻结：update-narrative 被拒，并指向 record-reflection", async () => {
     decisionFindFirst.mockResolvedValue(decisionFixture())
+    questionFindMany.mockResolvedValue([
+      { id: "q2", title: "已结算", resolved: true },
+    ])
+
+    await expect(
+      asOwner().updateNarrative({
+        decisionId: "d1",
+        unknownInfo: "当时不知道团队会不会被收购",
+      }),
+    ).rejects.toThrow(/叙事已冻结/)
+
+    expect(decisionUpdate).not.toHaveBeenCalled()
+  })
+
+  it("零改动不算写入：冻结后提交与现状相同的值不报错", async () => {
+    decisionFindFirst.mockResolvedValue(
+      decisionFixture({ statement: "接这个 offer" }),
+    )
     questionFindMany.mockResolvedValue([
       { id: "q2", title: "已结算", resolved: true },
     ])
     decisionUpdate.mockResolvedValue(decisionFixture())
 
-    await expect(
-      asOwner().setRubric({
-        decisionId: "d1",
-        entries: [{ itemKey: "alternatives", status: "DONE" }],
-      }),
-    ).rejects.toThrow(/已锁定/)
-
-    // 同一个决策，叙事仍写得进去——锁定不是把整个决策冻结
     await asOwner().updateNarrative({
       decisionId: "d1",
       statement: "接这个 offer",
-      unknownInfo: "当时不知道团队会不会被收购",
     })
 
-    expect(decisionUpdate).toHaveBeenCalledWith({
-      where: { id: "d1" },
-      data: expect.objectContaining({
-        statement: "接这个 offer",
-        unknownInfo: "当时不知道团队会不会被收购",
-      }),
-    })
+    expect(decisionUpdate).toHaveBeenCalled()
   })
 
   it("叙事写入同样受属主边界约束", async () => {
@@ -937,5 +982,354 @@ describe("锁定只作用于清单：叙事仍可补充（ADR-0020 · ticket 04�
     await expect(
       asOwner().updateNarrative({ decisionId: "d1", statement: "x" }),
     ).rejects.toThrow(/找不到该决策/)
+  })
+})
+
+describe("动作承诺：补写自由，改写留痕；清空动作不能留下孤立时点（ADR-0041）", () => {
+  it("给空白动作补写：不要理由，也不留修订记录", async () => {
+    decisionFindFirst.mockResolvedValue(decisionFixture())
+    decisionUpdate.mockResolvedValue(decisionFixture())
+
+    await asOwner().updateNarrative({
+      decisionId: "d1",
+      action: "在 10-31 前签字",
+    })
+
+    expect(revisionCreateMany).not.toHaveBeenCalled()
+    expect(decisionUpdate).toHaveBeenCalledWith({
+      where: { id: "d1" },
+      data: { action: "在 10-31 前签字" },
+    })
+  })
+
+  it("改写已填写的动作：没有理由即拒绝，且什么都不写", async () => {
+    decisionFindFirst.mockResolvedValue(
+      decisionFixture({ action: "在 10-31 前签字" }),
+    )
+
+    await expect(
+      asOwner().updateNarrative({
+        decisionId: "d1",
+        action: "改成 11-01 签字",
+      }),
+    ).rejects.toThrow(/必须给出理由/)
+
+    expect(revisionCreateMany).not.toHaveBeenCalled()
+    expect(decisionUpdate).not.toHaveBeenCalled()
+  })
+
+  it("改写带理由 ⇒ 落一条动作修订：旧值 / 新值 / 理由都在", async () => {
+    decisionFindFirst.mockResolvedValue(
+      decisionFixture({ action: "在 10-31 前签字" }),
+    )
+    decisionUpdate.mockResolvedValue(decisionFixture())
+
+    await asOwner().updateNarrative({
+      decisionId: "d1",
+      action: "改成 11-01 签字",
+      reason: "当初把签字日期记错了一天",
+    })
+
+    expect(revisionCreateMany).toHaveBeenCalledWith({
+      data: [
+        expect.objectContaining({
+          field: "action",
+          oldValue: "在 10-31 前签字",
+          newValue: "改成 11-01 签字",
+          reason: "当初把签字日期记错了一天",
+        }),
+      ],
+    })
+  })
+
+  it("清空动作但保留承诺时点 ⇒ 拒绝：不能留下「有期限没动作」的状态", async () => {
+    decisionFindFirst.mockResolvedValue(
+      decisionFixture({
+        action: "在 10-31 前签字",
+        actionDueAt: new Date("2026-10-31T00:00:00Z"),
+      }),
+    )
+
+    await expect(
+      asOwner().updateNarrative({
+        decisionId: "d1",
+        action: "",
+        reason: "这个承诺不做了",
+      }),
+    ).rejects.toThrow(/清空动作时也必须清空 actionDueAt/)
+
+    expect(decisionUpdate).not.toHaveBeenCalled()
+  })
+
+  it("动作与时点一起清空 ⇒ 允许，两列都变 null 且各留一条修订", async () => {
+    decisionFindFirst.mockResolvedValue(
+      decisionFixture({
+        action: "在 10-31 前签字",
+        actionDueAt: new Date("2026-10-31T00:00:00Z"),
+      }),
+    )
+    decisionUpdate.mockResolvedValue(decisionFixture())
+
+    await asOwner().updateNarrative({
+      decisionId: "d1",
+      action: "",
+      actionDueAt: null,
+      reason: "这个承诺不做了",
+    })
+
+    expect(decisionUpdate).toHaveBeenCalledWith({
+      where: { id: "d1" },
+      data: { action: null, actionDueAt: null },
+    })
+    expect(revisionCreateMany).toHaveBeenCalledWith({
+      data: [
+        expect.objectContaining({ field: "action", newValue: null }),
+        expect.objectContaining({ field: "actionDueAt", newValue: null }),
+      ],
+    })
+  })
+})
+
+describe("decision.recordExecution（ADR-0041：事实只增不改）", () => {
+  const executionCreate = (
+    prisma as unknown as { decisionExecution: { create: jest.Mock } }
+  ).decisionExecution.create
+  const executionFindMany = (
+    prisma as unknown as { decisionExecution: { findMany: jest.Mock } }
+  ).decisionExecution.findMany
+
+  it("动作从未写下 ⇒ 拒绝：一条执行记录无法解释成「执行了什么」", async () => {
+    decisionFindFirst.mockResolvedValue(decisionFixture())
+    executionFindMany.mockResolvedValue([])
+
+    await expect(
+      asOwner().recordExecution({ decisionId: "d1", kind: "EXECUTED" }),
+    ).rejects.toThrow(/还没有写下动作/)
+
+    expect(executionCreate).not.toHaveBeenCalled()
+  })
+
+  it("有动作 ⇒ 落一条事实，未给时点时用现在", async () => {
+    decisionFindFirst.mockResolvedValue(
+      decisionFixture({ action: "在 10-31 前签字", actionDueAt: null }),
+    )
+    executionFindMany.mockResolvedValue([])
+    executionCreate.mockResolvedValue({ id: "e1" })
+
+    await asOwner().recordExecution({ decisionId: "d1", kind: "EXECUTED" })
+
+    expect(executionCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        decisionId: "d1",
+        kind: "EXECUTED",
+        occurredAt: expect.any(Date),
+      }),
+    })
+  })
+
+  it("已执行 ⇒ 不能再声明放弃（互斥，而不是让状态取决于读取顺序）", async () => {
+    decisionFindFirst.mockResolvedValue(
+      decisionFixture({ action: "在 10-31 前签字" }),
+    )
+    executionFindMany.mockResolvedValue([
+      { kind: "EXECUTED", occurredAt: new Date("2026-10-20T00:00:00Z") },
+    ])
+
+    await expect(
+      asOwner().recordExecution({ decisionId: "d1", kind: "ABANDONED" }),
+    ).rejects.toThrow(/执行与放弃互斥/)
+  })
+})
+
+describe("decision.list 的 --action-overdue 下钻（ADR-0041）", () => {
+  it("只列「承诺到期却没执行也没放弃」的决策", async () => {
+    const longAgo = new Date("2020-01-01T00:00:00Z")
+    decisionFindMany.mockResolvedValue([
+      {
+        id: "overdue",
+        statement: "压预算",
+        createdAt: longAgo,
+        rubricVersion: 1,
+        lockedAt: null,
+        action: "把 Q4 市场预算压到 40 万",
+        actionDueAt: longAgo,
+        executions: [],
+        rubricEntries: [],
+        questions: [],
+      },
+      {
+        id: "future",
+        statement: "签字",
+        createdAt: longAgo,
+        rubricVersion: 1,
+        lockedAt: null,
+        action: "在 2099 前签字",
+        actionDueAt: new Date("2099-01-01T00:00:00Z"),
+        executions: [],
+        rubricEntries: [],
+        questions: [],
+      },
+    ])
+
+    const list = await asOwner().list({ actionOverdue: true })
+
+    expect(list.map((item) => item.id)).toEqual(["overdue"])
+    expect(list[0].actionState).toBe("OVERDUE")
+  })
+})
+
+describe("decision.list 的过滤组合（两个 flag 同时给 = 交集）", () => {
+  const longAgo = new Date("2020-01-01T00:00:00Z")
+  const row = (
+    id: string,
+    actionDueAt: Date | null,
+    /** `null` = 一条都没记录；数组 = 这些条目记为 DONE。 */
+    doneKeys: string[] | null,
+  ) => ({
+    id,
+    statement: id,
+    createdAt: longAgo,
+    rubricVersion: 1,
+    lockedAt: null,
+    action: actionDueAt ? `${id} 的动作` : null,
+    actionDueAt,
+    executions: [],
+    rubricEntries: (doneKeys ?? []).map((itemKey) => ({
+      itemKey,
+      status: "DONE" as const,
+    })),
+    questions: [],
+  })
+
+  it("两条都传时取交集，而不是让后一个被静默丢弃", async () => {
+    decisionFindMany.mockResolvedValue([
+      // 清单从未记录 + 动作逾期 → 唯一应当出现
+      row("both", longAgo, null),
+      // 清单从未记录，但动作未到期
+      row("onlyRubric", new Date("2099-01-01T00:00:00Z"), null),
+      // 动作逾期，但清单已完整记录（v1 的全部五条都要有值）
+      row("onlyAction", longAgo, [
+        "alternatives",
+        "premortem",
+        "baseRate",
+        "whatIfWrong",
+        "falsifiableCriteria",
+      ]),
+    ])
+
+    const list = await asOwner().list({
+      rubricMissing: true,
+      actionOverdue: true,
+    })
+
+    expect(list.map((item) => item.id)).toEqual(["both"])
+  })
+})
+
+describe("decision.byId 的派生证据（ADR-0038 §四：披露，不计分）", () => {
+  const revisionFindMany = (
+    prisma as unknown as { revision: { findMany: jest.Mock } }
+  ).revision.findMany
+
+  const detailWithPrediction = () => {
+    decisionFindFirst.mockResolvedValue({
+      id: "d1",
+      rubricVersion: 1,
+      statement: "接 offer",
+      lockedAt: null,
+      rubricEntries: [],
+      revisions: [],
+      questions: [
+        {
+          id: "q1",
+          title: "6 月底前收到 offer",
+          resolved: false,
+          resolutionCriteria: "邮件中出现正式 offer 字样",
+          questionScores: [],
+        },
+      ],
+    })
+  }
+
+  it("判据的修订记录按 **questionId** 查：按 decisionId 查只会永远查不到", () => {
+    detailWithPrediction()
+    revisionFindMany.mockResolvedValue([{ field: "resolutionCriteria" }])
+
+    return asOwner()
+      .byId({ decisionId: "d1" })
+      .then((detail) => {
+        expect(revisionFindMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: {
+              questionId: { in: ["q1"] },
+              field: "resolutionCriteria",
+            },
+          }),
+        )
+        // 判据被改过 ⇒ 不披露「已成立」
+        expect(detail.rubricEvidence).toEqual([])
+      })
+  })
+
+  it("无修订记录时披露一条证据，且完成度仍只由记录决定", async () => {
+    detailWithPrediction()
+    revisionFindMany.mockResolvedValue([])
+
+    const detail = await asOwner().byId({ decisionId: "d1" })
+
+    expect(detail.rubricEvidence).toEqual([
+      expect.objectContaining({ itemKey: "falsifiableCriteria" }),
+    ])
+    // 证据不进分值：一条都没记录，完成度仍是 0/5
+    expect(detail.rubric.done).toBe(0)
+    expect(detail.rubric.unrecorded).toHaveLength(5)
+  })
+})
+
+describe("decision.recordReflection（ADR-0037：只增不改、独立成栏）", () => {
+  const reflectionCreate = (
+    prisma as unknown as { decisionReflection: { create: jest.Mock } }
+  ).decisionReflection.create
+
+  it("空内容被拒，且不落库——一条没有内容的复盘不是记录", async () => {
+    decisionFindFirst.mockResolvedValue(decisionFixture())
+
+    await expect(
+      asOwner().recordReflection({ decisionId: "d1", body: "   " }),
+    ).rejects.toThrow(/不能为空/)
+
+    expect(reflectionCreate).not.toHaveBeenCalled()
+  })
+
+  it("不是我的决策 ⇒ NOT_FOUND，且在落库之前就拒", async () => {
+    decisionFindFirst.mockResolvedValue(null)
+
+    await expect(
+      asOwner().recordReflection({ decisionId: "d1", body: "现在回看……" }),
+    ).rejects.toThrow(/找不到该决策/)
+
+    expect(reflectionCreate).not.toHaveBeenCalled()
+  })
+
+  it("能写在**揭晓之后**：不设时机门槛（ADR-0037 第四点）", async () => {
+    // 已冻结的决策：改叙事会被拒，但复盘记录照写——「放弃」与「复盘」正是
+    // 最该能写下来的时候。
+    decisionFindFirst.mockResolvedValue(
+      decisionFixture({ lockedAt: new Date("2026-01-01T00:00:00Z") }),
+    )
+    questionFindMany.mockResolvedValue([
+      { id: "q2", title: "已结算", resolved: true },
+    ])
+    reflectionCreate.mockResolvedValue({ id: "r1" })
+
+    const result = await asOwner().recordReflection({
+      decisionId: "d1",
+      body: "  现在回看，我当时低估了……  ",
+    })
+
+    expect(result).toEqual({ id: "r1" })
+    expect(reflectionCreate).toHaveBeenCalledWith({
+      data: { decisionId: "d1", body: "现在回看，我当时低估了……" },
+    })
   })
 })

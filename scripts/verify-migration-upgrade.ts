@@ -6,8 +6,8 @@
  * ## 为什么需要它
  *
  * `CI` 里已有的 `prisma migrate deploy` 跑在**空库**上，只证明"迁移能被应用"，不证明
- * "**已有数据**的库升级后数据是对的"。而本次三条迁移各自带一条回填或一条约束收紧，
- * 它们的失败方向都是**静默改写历史**：
+ * "**已有数据**的库升级后数据是对的"。本次五条迁移里，三条带回填或约束收紧、两条带
+ * **改名列**，它们的失败方向都是**静默改写历史**：
  *
  * - `20260914200000_settlement_confirmed_by`：`UPDATE … SET "confirmedByUserId" = "userId"
  *   WHERE resolved`。写错口径 ⇒ 历史结算的确认者错位 ⇒ 用户的校准里**静默**少一批或
@@ -15,14 +15,19 @@
  * - `20260914180000_decision_domain_tags`：`name` → `nameNormalized` 的唯一键收窄。
  *   若库里已有把大小写当两个标签的行（`CPI` 与 `cpi`），创建唯一索引会失败——那是
  *   **想要的行为**（需要人来决定合并哪一个），本脚本把"它会失败"钉住。
+ * - `20261019090000_narrative_freeze_and_reflection`：`rubricLockedAt` → `lockedAt` 是
+ *   **改名**。Prisma 若把它退化成 `DROP + ADD`，每一行已有的锁定时点会被静默清空，而
+ *   空库上跑迁移看不见这个（ADR-0037）。
+ * - `20261019100000_decision_action_and_execution`：只新增可空列 / 新表 / 枚举，本不需要
+ *   单独验证；它与上面那条同一个提交，一起跑是为了让两条互不踩踏。
  *
  * ## 做法
  *
- * 取 `prisma/migrations/` 里除本次三条以外的全部迁移（= 升级前的 schema），应用到一个
+ * 取 `prisma/migrations/` 里除本次五条以外的全部迁移（= 升级前的 schema），应用到一个
  * **独立库**上，插入符合旧 schema 的数据，再对同一个库跑完整的 `migrate deploy`，最后
  * 断言回填结果。第二个场景专门造大小写冲突，断言迁移**大声失败**。
  *
- * 边界：本脚本覆盖的是这三条迁移升级路径。将来新增迁移应自带同类验证——这里不自动
+ * 边界：本脚本覆盖的是这五条迁移升级路径。将来新增迁移应自带同类验证——这里不自动
  * 跟随（自动跟随会让"旧库"的定义随 HEAD 漂移，验证就不再是确定的）。
  *
  * 新增迁移时的做法（AGENTS.md「改动数据库里已有的数据之前」有白话版）：
@@ -47,11 +52,16 @@ const MIGRATIONS_DIR = path.join(REPO_ROOT, "prisma", "migrations")
 const VERIFY_DB = "fatebook_migration_verify"
 const VERIFY_URL = `postgresql://fatebook:postgres@localhost:5432/${VERIFY_DB}`
 
-/** 本次要验证的三条（升级前 = 目录里排除它们之后的全部）。 */
+/** 本次要验证的五条（升级前 = 目录里排除它们之后的全部）。 */
 const UPGRADE_MIGRATIONS = [
   "20260914120000_audit_metadata",
   "20260914180000_decision_domain_tags",
   "20260914200000_settlement_confirmed_by",
+  // ADR-0037：`rubricLockedAt` → `lockedAt` 是**改名**，Prisma 有可能把它退化成
+  // DROP + ADD（那会静默丢掉每一行已有的锁定时点）。这里断言值被保留。
+  "20261019090000_narrative_freeze_and_reflection",
+  // ADR-0041：只新增列/表，但和上面那条同一个提交，一起验证不会互相踩。
+  "20261019100000_decision_action_and_execution",
 ]
 
 const keepFlag = process.argv.includes("--keep")
@@ -171,10 +181,13 @@ INSERT INTO "Question" (id, title, "resolveBy", "userId", resolved, resolution, 
   ('mig-q1', '旧库里的已结算题', '2025-01-01T00:00:00Z', 'mig-u1', true, 'YES'::"Resolution", '2025-02-01T00:00:00Z', NULL);
 INSERT INTO "Forecast" (forecast, "questionId", "userId") VALUES
   (0.6, 'mig-q1', 'mig-u2');
+-- ADR-0037：一条**已经锁定**的决策。改名迁移必须把它的锁定时点原样带过去。
+INSERT INTO "Decision" (id, "userId", statement, "rubricLockedAt") VALUES
+  ('mig-d1', 'mig-u1', '旧库里已锁定的决策', '2025-03-01T00:00:00Z');
 `.trim()
 
 function scenarioUpgradeWithData(preUpgradeDir: string): void {
-  console.log("\n[场景 1] 有数据的旧库升级到本次三条迁移")
+  console.log("\n[场景 1] 有数据的旧库升级到本次五条迁移")
   resetDatabase()
   migrateDeploy(path.join(preUpgradeDir, "schema.prisma"))
   execFileSync(
@@ -250,6 +263,28 @@ function scenarioUpgradeWithData(preUpgradeDir: string): void {
     sql(`SELECT (q."resolutionSource" IS NULL AND q."confirmedByUserId" IS NOT NULL AND q."confirmedByUserId" <> f."userId")
          FROM "Question" q JOIN "Forecast" f ON f."questionId" = q.id
          WHERE q.id='mig-q1' AND f."userId"='mig-u2'`),
+    "t",
+  )
+
+  // ADR-0037：改名列必须**保值**（RENAME 而不是 DROP + ADD），且旧列名不复存在。
+  check(
+    "改名前 lockedAt 值被原样保留",
+    sql(
+      `SELECT to_char("lockedAt", 'YYYY-MM-DD') FROM "Decision" WHERE id='mig-d1'`,
+    ),
+    "2025-03-01",
+  )
+  check(
+    "旧列 rubricLockedAt 已不存在（不是两列并存）",
+    sql(
+      `SELECT count(*) FROM information_schema.columns WHERE table_name='Decision' AND column_name='rubricLockedAt'`,
+    ),
+    "0",
+  )
+  // ADR-0041：新增列对历史行为 NULL（不是空串，也不是编出来的动作）
+  check(
+    "历史决策的 action 为 NULL（没有回填）",
+    sql(`SELECT "action" IS NULL FROM "Decision" WHERE id='mig-d1'`),
     "t",
   )
 

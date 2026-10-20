@@ -1,5 +1,6 @@
 import {
   missingRevisionReason,
+  planActionRevisions,
   planNarrativeRevisions,
   planRevisions,
   RevisionSnapshot,
@@ -170,5 +171,73 @@ describe("planNarrativeRevisions（ADR-0012 × ADR-0020：补写自由，改写�
 
     expect(missingRevisionReason(drafts, undefined)).toMatch(/必须给出理由/)
     expect(missingRevisionReason(drafts, "因为当初写错了")).toBeNull()
+  })
+})
+
+describe("planActionRevisions（ADR-0041：与叙事同一条留痕规则）", () => {
+  const action = {
+    action: "在 10-31 前签字",
+    actionDueAt: new Date("2026-10-31T00:00:00Z"),
+  }
+
+  it("没提到的字段不算改动——局部更新不会把别处抹掉", () => {
+    expect(planActionRevisions(action, {})).toEqual([])
+  })
+
+  it("给空白动作补写不算改写：当初就没记，补记不产生漂移", () => {
+    expect(
+      planActionRevisions(
+        { action: null, actionDueAt: null },
+        { action: "在 10-31 前签字", actionDueAt: new Date("2026-10-31") },
+      ),
+    ).toEqual([])
+  })
+
+  it("值与原来相同 ⇒ 无可留痕", () => {
+    expect(
+      planActionRevisions(action, {
+        action: "在 10-31 前签字",
+        actionDueAt: new Date("2026-10-31T00:00:00Z"),
+      }),
+    ).toEqual([])
+  })
+
+  it("改写已填写的动作 ⇒ 一条修订，旧值新值都在", () => {
+    expect(
+      planActionRevisions(action, { action: "改成 11-01 前签字" }),
+    ).toEqual([
+      {
+        field: "action",
+        oldValue: "在 10-31 前签字",
+        newValue: "改成 11-01 前签字",
+      },
+    ])
+  })
+
+  it("清空已填写的动作也算改写（新值为 null）", () => {
+    expect(planActionRevisions(action, { action: null })).toEqual([
+      { field: "action", oldValue: "在 10-31 前签字", newValue: null },
+    ])
+  })
+
+  it("改承诺时点同样留痕，且序列化成 ISO（旧值可回溯）", () => {
+    expect(
+      planActionRevisions(action, {
+        actionDueAt: new Date("2026-11-01T00:00:00Z"),
+      }),
+    ).toEqual([
+      {
+        field: "actionDueAt",
+        oldValue: "2026-10-31T00:00:00.000Z",
+        newValue: "2026-11-01T00:00:00.000Z",
+      },
+    ])
+  })
+
+  it("同一条「改了就必须给理由」的规则也管动作（共用 missingRevisionReason）", () => {
+    const drafts = planActionRevisions(action, { action: "改了" })
+
+    expect(missingRevisionReason(drafts, undefined)).toMatch(/必须给出理由/)
+    expect(missingRevisionReason(drafts, "当初写错了")).toBeNull()
   })
 })

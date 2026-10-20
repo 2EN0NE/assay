@@ -6,7 +6,8 @@ import {
   deriveRubricCompletion,
   findLockingPrediction,
   rubricItemsOf,
-  rubricLockOf,
+  derivableRubricEvidence,
+  decisionLockOf,
   rubricStatusOf,
   rubricWrittenAfterOutcome,
   validateRubricEntries,
@@ -25,9 +26,9 @@ describe("RUBRIC_VERSIONS（ADR-0020 第四点：表只增不改）", () => {
         version: 1,
         items: [
           { key: "alternatives", label: "备选方案 ≥ 2" },
-          { key: "premortem", label: "事前剖析" },
+          { key: "premortem", label: "事前剖析（下注前写下会怎么失败）" },
           { key: "baseRate", label: "参考基准率" },
-          { key: "whatIfWrong", label: "写下「我可能错在哪」" },
+          { key: "whatIfWrong", label: "写下「我可能错在哪」（下注前）" },
           { key: "falsifiableCriteria", label: "判据可证伪且已冻结" },
         ],
       },
@@ -110,10 +111,11 @@ describe("completionOfItems（ADR-0016：分值由完成度推导）", () => {
       done: 3,
       total: 5,
       missing: ["whatIfWrong", "falsifiableCriteria"],
+      unrecorded: [],
     })
   })
 
-  it("诊断力：没记录的条目算作漏掉的那一步，而不是从分母里消失", () => {
+  it("诊断力：没记录的条目仍算漏，但**与「记了没做到」分开报**（ADR-0038）", () => {
     const completion = completionOfItems(
       [{ itemKey: "alternatives", status: "DONE" }],
       currentItems,
@@ -121,7 +123,8 @@ describe("completionOfItems（ADR-0016：分值由完成度推导）", () => {
 
     expect(completion.done).toBe(1)
     expect(completion.total).toBe(5)
-    expect(completion.missing).toEqual([
+    expect(completion.missing).toEqual([])
+    expect(completion.unrecorded).toEqual([
       "premortem",
       "baseRate",
       "whatIfWrong",
@@ -147,11 +150,13 @@ describe("completionOfItems（ADR-0016：分值由完成度推导）", () => {
       done: 1,
       total: 2,
       missing: ["legacyItemRemovedInV2"],
+      unrecorded: [],
     })
     expect(completionOfItems(entries, v2Items)).toEqual({
       done: 1,
       total: 1,
       missing: [],
+      unrecorded: [],
     })
   })
 })
@@ -170,13 +175,13 @@ describe("deriveRubricCompletion（按决策所属版本计分）", () => {
   })
 })
 
-describe("rubricLockOf（ADR-0020：锁定态只有一个算法）", () => {
+describe("decisionLockOf（ADR-0020 / ADR-0037：冻结态只有一个算法）", () => {
   const unresolved = { id: "q1", title: "还没结算", resolved: false }
   const resolved = { id: "q2", title: "6 月底前收到 offer", resolved: true }
   const lockedAt = new Date("2026-01-01T00:00:00Z")
 
   it("事实与时点都不成立 ⇒ 不锁定，且没有可指名的预测", () => {
-    expect(rubricLockOf([unresolved], null)).toEqual({
+    expect(decisionLockOf([unresolved], null)).toEqual({
       locked: false,
       byPredictionId: null,
       byPredictionTitle: null,
@@ -185,7 +190,7 @@ describe("rubricLockOf（ADR-0020：锁定态只有一个算法）", () => {
   })
 
   it("任一结算 ⇒ 锁定，并指名是哪条关上了门", () => {
-    expect(rubricLockOf([unresolved, resolved], null)).toEqual({
+    expect(decisionLockOf([unresolved, resolved], null)).toEqual({
       locked: true,
       byPredictionId: "q2",
       byPredictionTitle: "6 月底前收到 offer",
@@ -195,8 +200,8 @@ describe("rubricLockOf（ADR-0020：锁定态只有一个算法）", () => {
 
   it("事实侧消失（撤销结算）但时点还在 ⇒ 仍然锁定，只是没有可指名的预测", () => {
     // `undoQuestionResolution` 把 resolved 置回 false。只看事实的实现会在这里
-    // 把门重新打开——这正是加进 rubricLockedAt 的理由。
-    expect(rubricLockOf([unresolved], lockedAt)).toEqual({
+    // 把门重新打开——这正是加进 lockedAt 的理由（ADR-0037 由 rubricLockedAt 改名）。
+    expect(decisionLockOf([unresolved], lockedAt)).toEqual({
       locked: true,
       byPredictionId: null,
       byPredictionTitle: null,
@@ -276,5 +281,49 @@ describe("findLockingPrediction（ADR-0020：结算即锁）", () => {
 
   it("任一结算 ⇒ 锁定，并指出是哪条关上了这扇门", () => {
     expect(findLockingPrediction([unresolved, resolved])).toEqual(resolved)
+  })
+})
+
+/**
+ * ADR-0038 第四点：派生注记**只披露、不计分**。
+ *
+ * 这组用例的存在理由是一次真实的错接线：`hasRevision` 的入参一度取的是
+ * `Decision.revisions`（叙事/动作/标签），而 `resolutionCriteria` 的 Revision 只会
+ * 以 `questionId` 落库——于是"未被修订"这道守卫永远成立，证据行说出与库相反的话。
+ * 纯函数本身有测试，错的是调用点，所以这里同时钉住"有修订就不给证据"。
+ */
+describe("derivableRubricEvidence（ADR-0038 §四：披露，不计分）", () => {
+  const criteria = [{ resolutionCriteria: "邮件中出现正式 offer 字样" }]
+
+  it("判据都在、且无修订记录 ⇒ 给一条证据，措辞是「库里能核到」而不是「你做到了」", () => {
+    const evidence = derivableRubricEvidence(criteria, [])
+
+    expect(evidence).toEqual([
+      expect.objectContaining({ itemKey: "falsifiableCriteria" }),
+    ])
+    expect(evidence[0].evidence).toContain("1 条预测")
+    expect(evidence[0].evidence).toContain("不计入完成度")
+    expect(evidence[0].evidence).not.toContain("你做到了")
+  })
+
+  it("判据被修订过 ⇒ **不给**证据：那一步不再是「写死了、从未改过」", () => {
+    expect(
+      derivableRubricEvidence(criteria, [{ field: "resolutionCriteria" }]),
+    ).toEqual([])
+  })
+
+  it("判据为空 / 缺失 ⇒ 不给证据（缺失不是否定，但也不能当成立）", () => {
+    expect(derivableRubricEvidence([{ resolutionCriteria: "" }], [])).toEqual(
+      [],
+    )
+    expect(
+      derivableRubricEvidence([{ resolutionCriteria: "   " }], []),
+    ).toEqual([])
+    // fixture 可能整个没有这个键（`undefined.trim()` 会当场抛错）
+    expect(derivableRubricEvidence([{} as never], [])).toEqual([])
+  })
+
+  it("没有任何 Prediction ⇒ 不给证据：这条决策下无从核起", () => {
+    expect(derivableRubricEvidence([], [])).toEqual([])
   })
 })
