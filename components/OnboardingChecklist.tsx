@@ -6,7 +6,6 @@ import { usePredictForm } from "./predict-form/PredictProvider"
 import { api } from "../lib/web/trpc"
 import { useDebounce } from "use-debounce"
 import { QuestionType } from "@prisma/client"
-import { useBrowser } from "../lib/web/utils"
 import Confetti from "react-confetti"
 
 type QuestionCategory = "personal" | "projects" | "shared"
@@ -143,7 +142,6 @@ export function OnboardingChecklist() {
   const [suggestionClicked, setSuggestionClicked] = useState(false)
   const { setValue } = usePredictForm()
 
-  const browser = useBrowser()
   const boundaryRef = useRef<HTMLDivElement>(null)
 
   const onSelectSuggestion = useCallback(
@@ -352,16 +350,6 @@ export function OnboardingChecklist() {
               In the meantime, you can:
               <ul className="list-disc list-inside m-0 pl-2">
                 <li>
-                  Try the{" "}
-                  <Link
-                    href="/extension"
-                    className="text-neutral-500 hover:text-neutral-600"
-                  >
-                    {browser} extension
-                  </Link>
-                  , to track your predictions instantly around the web
-                </li>
-                <li>
                   Check out{" "}
                   <Link
                     href="/public"
@@ -370,16 +358,6 @@ export function OnboardingChecklist() {
                     public questions
                   </Link>{" "}
                   that others have created
-                </li>
-                <li>
-                  Consider adding{" "}
-                  <Link
-                    href="/for-slack"
-                    className="text-neutral-500 hover:text-neutral-600"
-                  >
-                    nano-fatebook-agent for Slack
-                  </Link>{" "}
-                  to your workspace
                 </li>
               </ul>
             </div>
