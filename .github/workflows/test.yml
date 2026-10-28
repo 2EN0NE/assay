@@ -69,9 +69,9 @@ jobs:
         run: npx prisma migrate deploy
         env:
           # pi-lens-ignore: line-length
-          DATABASE_URL: postgresql://fatebook:postgres@localhost:5432/fatebook_development
+          DATABASE_URL: postgresql://assay:postgres@localhost:5432/assay_development
           # pi-lens-ignore: line-length
-          DATABASE_DIRECT_URL: postgresql://fatebook:postgres@localhost:5432/fatebook_development
+          DATABASE_DIRECT_URL: postgresql://assay:postgres@localhost:5432/assay_development
 
       # 空库上的 `migrate deploy` 只证明“迁移能被应用”，不证明“**已有数据**的库升级后
       # 数据是对的”。本次三条迁移各带一条回填（confirmedByUserId = 作者、nameNormalized
@@ -87,13 +87,13 @@ jobs:
         run: npm run test:e2e
         env:
           # pi-lens-ignore: line-length
-          DATABASE_URL: postgresql://fatebook:postgres@localhost:5432/fatebook_development
+          DATABASE_URL: postgresql://assay:postgres@localhost:5432/assay_development
           # pi-lens-ignore: line-length
-          DATABASE_DIRECT_URL: postgresql://fatebook:postgres@localhost:5432/fatebook_development
+          DATABASE_DIRECT_URL: postgresql://assay:postgres@localhost:5432/assay_development
           NEXTAUTH_URL: http://localhost:3000/api/auth
           HOST_URL: http://localhost:3000
           AUTH_EMAIL_SERVER: smtp://localhost:1025
-          AUTH_EMAIL_FROM: fatebook@localhost
+          AUTH_EMAIL_FROM: assay@localhost
           SECRET: e2e-test-secret-do-not-use-in-production
 
       - name: Upload Playwright report
@@ -112,9 +112,9 @@ jobs:
         run: npx next build
         env:
           # pi-lens-ignore: line-length
-          DATABASE_URL: postgresql://fatebook:postgres@localhost:5432/fatebook_development
+          DATABASE_URL: postgresql://assay:postgres@localhost:5432/assay_development
           # pi-lens-ignore: line-length
-          DATABASE_DIRECT_URL: postgresql://fatebook:postgres@localhost:5432/fatebook_development
+          DATABASE_DIRECT_URL: postgresql://assay:postgres@localhost:5432/assay_development
           NEXTAUTH_URL: http://localhost:3000/api/auth
           HOST_URL: http://localhost:3000
           SECRET: e2e-test-secret-do-not-use-in-production

@@ -307,7 +307,7 @@ export const appRouter = router({
 export type AppRouter = typeof appRouter
 
 export const openApiDocument = generateOpenApiDocument(appRouter, {
-  title: "nano-fatebook-agent OpenAPI",
+  title: "试金石 OpenAPI",
   version: "1.0.0",
   baseUrl: getClientBaseUrl(false) + "/api",
 })

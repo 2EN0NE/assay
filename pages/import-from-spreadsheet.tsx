@@ -3,8 +3,9 @@ import { BaseRow, Importer, ImporterField } from "react-csv-importer"
 import "react-csv-importer/dist/index.css"
 import { toast } from "react-hot-toast"
 import { Questions } from "../components/Questions"
+import { repoIssuesUrl } from "../lib/_constants"
 import { api } from "../lib/web/trpc"
-import { getCsvIdPrefix, signInToFatebook, useUserId } from "../lib/web/utils"
+import { getCsvIdPrefix, signInToAssay, useUserId } from "../lib/web/utils"
 import { log } from "../lib/_log"
 
 export default function ImportFromSpreadsheetPage() {
@@ -21,11 +22,11 @@ export default function ImportFromSpreadsheetPage() {
     <div className="px-4 pt-12 lg:pt-16 mx-auto max-w-4xl">
       <NextSeo
         title="Import from spreadsheet"
-        description="Import your predictions from a spreadsheet into nano-fatebook-agent"
+        description="Import your predictions from a spreadsheet into 试金石"
       />
       <div className="mx-auto">
         <div className="prose mx-auto">
-          <h3>Import questions from a spreadsheet into nano-fatebook-agent</h3>
+          <h3>Import questions from a spreadsheet into 试金石</h3>
           <ol>
             <li>
               {
@@ -50,9 +51,9 @@ export default function ImportFromSpreadsheetPage() {
           </ol>
           <p>
             {
-              "Spreadsheets can have many different formats so you might need to play around a bit to get this working. If you get stuck, you can email us at "
+              "Spreadsheets can have many different formats so you might need to play around a bit to get this working. 卡住了就到仓库开 issue："
             }
-            <a href="mailto:hello@sage-future.org">hello@sage-future.org</a>
+            <a href={repoIssuesUrl}>GitHub Issues</a>
           </p>
         </div>
         {userId ? (
@@ -84,7 +85,7 @@ export default function ImportFromSpreadsheetPage() {
         ) : (
           <button
             className="button primary mx-auto"
-            onClick={() => void signInToFatebook()}
+            onClick={() => void signInToAssay()}
           >
             Sign in or sign up to import your predictions
           </button>
@@ -120,7 +121,7 @@ const rows = [
   {
     name: "resolveBy",
     label:
-      "[Optional] Resolve by date - nano-fatebook-agent will remind you to resolve on this day (if blank we use the question creation date + 24h)",
+      "[Optional] Resolve by date - 试金石 will remind you to resolve on this day (if blank we use the question creation date + 24h)",
     optional: true,
   },
   {

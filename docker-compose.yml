@@ -9,15 +9,15 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: fatebook
+      POSTGRES_USER: assay
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: fatebook_development
+      POSTGRES_DB: assay_development
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U fatebook -d fatebook_development"]
+      test: ["CMD-SHELL", "pg_isready -U assay -d assay_development"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -33,15 +33,15 @@ services:
     environment:
       # Override DB URLs to point to the compose db service instead of localhost
       # pi-lens-ignore: line-length
-      DATABASE_URL: postgresql://fatebook:postgres@db:5432/fatebook_development
+      DATABASE_URL: postgresql://assay:postgres@db:5432/assay_development
       # pi-lens-ignore: line-length
-      DATABASE_DIRECT_URL: postgresql://fatebook:postgres@db:5432/fatebook_development
+      DATABASE_DIRECT_URL: postgresql://assay:postgres@db:5432/assay_development
       # HTTP (no SSL proxy in Docker)
       NEXTAUTH_URL: http://localhost:3000/api/auth
       HOST_URL: http://localhost:3000
       # Local mail catcher — view sent emails at http://localhost:8025
       AUTH_EMAIL_SERVER: smtp://mail:1025
-      AUTH_EMAIL_FROM: fatebook@localhost
+      AUTH_EMAIL_FROM: assay@localhost
     volumes:
       - .:/app
       - /app/node_modules # preserve node_modules installed in image

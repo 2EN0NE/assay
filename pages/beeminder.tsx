@@ -1,6 +1,6 @@
 import { NextSeo } from "next-seo"
 import { CopyToClipboard } from "../components/ui/CopyToClipboard"
-import { signInToFatebook, useUserId } from "../lib/web/utils"
+import { signInToAssay, useUserId } from "../lib/web/utils"
 
 export default function BeeminderPage() {
   const userId = useUserId()
@@ -9,13 +9,13 @@ export default function BeeminderPage() {
     <div className="px-4 pt-12 lg:pt-16 mx-auto max-w-6xl">
       <NextSeo
         title="Beeminder"
-        description="Use Beeminder to track your nano-fatebook-agent forecasts"
+        description="Use Beeminder to track your 试金石 forecasts"
       />
       <div className="mx-auto prose">
-        <h2>nano-fatebook-agent Beeminder integration</h2>
+        <h2>试金石 Beeminder integration</h2>
         <p>
           Want to build an ironclad habit of forecasting? Commit to making
-          regular forecasts on nano-fatebook-agent using{" "}
+          regular forecasts on 试金石 using{" "}
           <a
             href="https://www.beeminder.com"
             target="_blank"
@@ -29,15 +29,14 @@ export default function BeeminderPage() {
           <div className="bg-indigo-50 rounded-lg p-4">
             <h4 className="mt-0 mb-2">How it works</h4>
             <ol className="mt-0 mb-0">
-              <li>Copy your nano-fatebook-agent user ID below</li>
+              <li>Copy your 试金石 user ID below</li>
               <li>
                 <a
                   href="https://www.beeminder.com/fatebook?utm_source=fatebook"
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  Create a Beeminder goal with the nano-fatebook-agent
-                  integration
+                  Create a Beeminder goal with the 试金石 integration
                 </a>
               </li>
               <li>Paste your ID when setting up the goal</li>
@@ -50,7 +49,7 @@ export default function BeeminderPage() {
           <div className="flex w-full p-4">
             <button
               className="button primary mx-auto"
-              onClick={() => void signInToFatebook()}
+              onClick={() => void signInToAssay()}
             >
               Sign in to view your user ID
             </button>
@@ -78,20 +77,6 @@ export default function BeeminderPage() {
             </div>
           </div>
         )}
-
-        <div className="mt-4 prose mx-auto">
-          <p className="text-sm text-neutral-600">
-            Having problems? Join our{" "}
-            <a
-              href="https://discord.gg/K7V8jGCw9D"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Discord
-            </a>{" "}
-            for support.
-          </p>
-        </div>
       </div>
     </div>
   )

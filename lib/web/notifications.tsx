@@ -1,11 +1,10 @@
 import { Question, User } from "@prisma/client"
 import { ServerClient } from "postmark"
-import { postmarkApiToken } from "../_constants"
+import { postmarkApiToken, repoIssuesUrl } from "../_constants"
 import { log as logToStderr, warn } from "../_log"
 import { backendAnalyticsEvent } from "../_utils_server"
 import prisma from "../prisma"
 import { getQuestionUrl } from "./question_url"
-import { webFeedbackUrl } from "./utils"
 
 export async function createNotification({
   title,
@@ -180,12 +179,14 @@ export async function sendEmailWithTemplateUnbatched({
   try {
     response = await client.sendEmailWithTemplate({
       From: "reminders@localhost:3000",
-      ReplyTo: "hello@sage-future.org",
+      // 本实例没有运营方：回信走配置里的发件地址（`.env` 的 AUTH_EMAIL_FROM），
+      // 不再把上游的邮箱写死在这里。
+      ReplyTo: process.env.AUTH_EMAIL_FROM ?? "assay@localhost",
       To: to,
       TemplateAlias: templateAlias,
       TemplateModel: {
         product_url: "https://localhost:3000",
-        product_name: "nano-fatebook-agent",
+        product_name: "试金石",
         ...templateParams,
       },
       MessageStream: "outbound",
@@ -242,12 +243,12 @@ export async function sendEmailUnbatched({
   try {
     response = await client.sendEmailWithTemplate({
       From: "reminders@localhost:3000",
-      ReplyTo: "hello@sage-future.org",
+      ReplyTo: process.env.AUTH_EMAIL_FROM ?? "assay@localhost",
       To: to,
       TemplateAlias: "blank-transactional",
       TemplateModel: {
         product_url: "https://localhost:3000",
-        product_name: "nano-fatebook-agent",
+        product_name: "试金石",
         subject:
           subject.length >= 1999 ? `${subject.slice(0, 1995)}...` : subject,
         html_body: htmlBody,
@@ -278,9 +279,9 @@ export async function sendEmailUnbatched({
   }
 }
 
-export function fatebookEmailFooter() {
+export function assayEmailFooter() {
   return `\n
-<p><i><a href="https://localhost:3000">nano-fatebook-agent</a> helps you rapidly make and track predictions about the future.</i></p>
-<p><a href=${webFeedbackUrl}>Give feedback on nano-fatebook-agent</a></p>
+<p><i><a href="https://localhost:3000">试金石</a> helps you rapidly make and track predictions about the future.</i></p>
+<p><a href=${repoIssuesUrl}>Give feedback on 试金石</a></p>
 `
 }

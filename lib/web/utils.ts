@@ -13,10 +13,10 @@ export function useUserId() {
   return session.data?.user.id
 }
 
-export async function signInToFatebook() {
+export async function signInToAssay() {
   if (isWebview(window.navigator.userAgent)) {
     toast(
-      "Open nano-fatebook-agent in Safari or Chrome to sign in.\n\nGoogle does not support this browser.",
+      "Open 试金石 in Safari or Chrome to sign in.\n\nGoogle does not support this browser.",
       {
         duration: 10000,
       },
@@ -248,8 +248,6 @@ export function truncateString(
   }
   return truncated.trim() + (includeEllipsis ? "..." : "")
 }
-
-export const webFeedbackUrl = "https://forms.gle/mfyCqLG4pLoEqYfy9"
 
 export function downloadBlob(
   content: any,

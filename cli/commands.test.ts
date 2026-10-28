@@ -771,7 +771,7 @@ describe("决策命令（ADR-0019 / 0020 · ticket 05）", () => {
   })
 
   describe("issue-pairing-code —— 网页的第二扇门（ADR-0035）", () => {
-    const ENV = "FATEBOOK_ENABLE_PAIRING_LOGIN"
+    const ENV = "ASSAY_ENABLE_PAIRING_LOGIN"
     const savedEnv: Record<string, string | undefined> = {}
 
     beforeEach(() => {
@@ -808,7 +808,7 @@ describe("决策命令（ADR-0019 / 0020 · ticket 05）", () => {
       process.env[ENV] = "1"
       const { mocks, session } = fakeContext()
 
-      // FATEBOOK_AGENT_USER_EMAIL 不含秘密：谁设了都能以该身份跑命令，
+      // ASSAY_AGENT_USER_EMAIL 不含秘密：谁设了都能以该身份跑命令，
       // 因此它证明得了身份，证明不了「持有凭据」。
       await expectRunToThrow(
         command("issue-pairing-code"),
@@ -821,7 +821,7 @@ describe("决策命令（ADR-0019 / 0020 · ticket 05）", () => {
 
     it("开关打开后透传过程结果，并给出兑换页地址", async () => {
       process.env[ENV] = "1"
-      process.env.HOST_URL = "https://fatebook.home:3000/"
+      process.env.HOST_URL = "https://assay.home:3000/"
       const { mocks, session } = fakeContext()
       mocks.issuePairingCode.mockResolvedValue({
         code: "ABCD2345",
@@ -837,7 +837,7 @@ describe("决策命令（ADR-0019 / 0020 · ticket 05）", () => {
       expect(result).toEqual({
         code: "ABCD2345",
         expiresAt: "2026-10-13T12:10:00.000Z",
-        redeemUrl: "https://fatebook.home:3000/pair",
+        redeemUrl: "https://assay.home:3000/pair",
       })
     })
 

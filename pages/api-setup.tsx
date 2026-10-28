@@ -3,8 +3,9 @@ import dynamic from "next/dynamic"
 import Link from "next/link"
 import "swagger-ui-react/swagger-ui.css"
 import { CopyToClipboard } from "../components/ui/CopyToClipboard"
+import { repoIssuesUrl } from "../lib/_constants"
 import { api } from "../lib/web/trpc"
-import { signInToFatebook, useUserId } from "../lib/web/utils"
+import { signInToAssay, useUserId } from "../lib/web/utils"
 
 // eslint-disable-next-line @typescript-eslint/naming-convention
 const SwaggerUI = dynamic(() => import("swagger-ui-react"), { ssr: false })
@@ -24,16 +25,16 @@ export default function ApiPage() {
     <div className="px-4 pt-12 lg:pt-16 mx-auto max-w-6xl">
       <NextSeo
         title="API"
-        description="Use the API to create nano-fatebook-agent questions from a URL"
+        description="Use the API to create 试金石 questions from a URL"
       />
       <div className="mx-auto prose">
-        <h2>nano-fatebook-agent API</h2>
-        <h3>Use the API to create nano-fatebook-agent questions from a URL</h3>
+        <h2>试金石 API</h2>
+        <h3>Use the API to create 试金石 questions from a URL</h3>
         {!userId && (
           <div className="flex w-full p-4">
             <button
               className="button primary mx-auto"
-              onClick={() => void signInToFatebook()}
+              onClick={() => void signInToAssay()}
             >
               Sign in to set up your API key
             </button>
@@ -87,8 +88,8 @@ export default function ApiPage() {
           </div>
         )}
         <p>
-          You can use your API key to create nano-fatebook-agent questions just
-          by going this URL (separated onto multiple lines for readability):
+          You can use your API key to create 试金石 questions just by going this
+          URL (separated onto multiple lines for readability):
         </p>
 
         <p className="bg-neutral-100 outline outline-neutral-300 outline-1 p-2 rounded-md break-words">
@@ -182,31 +183,30 @@ export default function ApiPage() {
         </p>
 
         <p>
-          You can use this to integrate nano-fatebook-agent with other tools,
-          like iOS shortcuts. If you create an integration, let us know and we
-          can tell other nano-fatebook-agent users about it!
+          You can use this to integrate 试金石 with other tools, like iOS
+          shortcuts. 有集成想登记就到仓库 issue 里说一声。
         </p>
 
         <p>
-          Having trouble? Ask for help in{" "}
-          <Link href="https://discord.gg/mt9YVB8VDE" target="_blank">
-            Discord
+          遇到问题请到仓库开 issue：{" "}
+          <Link href={repoIssuesUrl} target="_blank">
+            GitHub Issues
           </Link>
           .
         </p>
 
-        <h3>Integrations that other nano-fatebook-agent users have created:</h3>
+        <h3>Integrations that other 试金石 users have created:</h3>
         <ul>
           <li>
             <Link href="https://github.com/GarretteBaker/obsidian-fatebook">
-              An Obsidian plugin to create and preview nano-fatebook-agent
-              questions right inside your editor
+              An Obsidian plugin to create and preview 试金石 questions right
+              inside your editor
             </Link>
             {" - by D0TheMath"}
           </li>
           <li>
             <Link href="https://www.icloud.com/shortcuts/25903acfcd3d4fd5bed31c2f50322928">
-              An iOS shortcut to create a nano-fatebook-agent question
+              An iOS shortcut to create a 试金石 question
             </Link>
             {
               " - by @JasperGo. You can add it to your homescreen or use Siri to create a question!"
@@ -214,21 +214,21 @@ export default function ApiPage() {
           </li>
           <li>
             <Link href="https://github.com/sonofhypnos/fatebook.el">
-              An Emacs plugin to create nano-fatebook-agent questions
+              An Emacs plugin to create 试金石 questions
             </Link>
             {" - by @sonofhypnos"}
           </li>
           <li>
             <Link href="https://github.com/Calebp98/alfred-fatebook-workflow">
-              An Alfred workflow to create nano-fatebook-agent questions
+              An Alfred workflow to create 试金石 questions
             </Link>
             {" - by Caleb Parikh"}
           </li>
         </ul>
-        <h3>Use the API to get nano-fatebook-agent questions by ID</h3>
+        <h3>Use the API to get 试金石 questions by ID</h3>
         <p>
           {
-            "You can also use the API to get nano-fatebook-agent questions by ID, here's an example:"
+            "You can also use the API to get 试金石 questions by ID, here's an example:"
           }
         </p>
 

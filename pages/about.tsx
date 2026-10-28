@@ -3,18 +3,17 @@ import Image from "next/image"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { WhyForecastInfo } from "../components/WhyForecastInfo"
-import { webFeedbackUrl } from "../lib/web/utils"
 
 const about = String.raw`
-nano-fatebook-agent aims to be the fastest way to make and track your predictions.
+试金石 aims to be the fastest way to make and track your predictions.
 
-nano-fatebook-agent was made by [Sage](https://sage-future.org), a 501(c)(3) charity building tools to make sense of the future. You can [donate](https://www.every.org/sage-future?utm_campaign=donate-link&method=card%2Cbank%2Cpaypal%2Cpay%2Cvenmo%2Cstocks%2Cdaf%2Ccrypto#/donate) to support our work.
+试金石 是 [Fatebook](https://fatebook.io) 的 fork，上游由 [Sage](https://sage-future.org)（501(c)(3) 慈善机构）制作；本仓库只是个人使用与改造。
 
-Want something changed or added? Send us feedback on [Discord](https://discord.gg/mt9YVB8VDE), to [hello@sage-future.org](mailto:hello@sage-future.org), or in this [form](${webFeedbackUrl}).
+Want something changed or added? Open an issue on [GitHub](https://github.com/2EN0NE/assay/issues).
 
-You can use nano-fatebook-agent through [localhost:3000](https://localhost:3000), in [Slack](/for-slack), or anywhere on the web with the [nano-fatebook-agent browser extension](/extension). If you want to use nano-fatebook-agent somewhere else, [suggest another nano-fatebook-agent integration](https://forms.gle/nRqUcj154oEVLxdZ9).
+You can use 试金石 through [localhost:3000](https://localhost:3000). 想把它接到别处，到仓库 issue 里说一声即可。
 
-nano-fatebook-agent is open source. You can find the code on [GitHub](https://github.com/Sage-Future/fatebook). Contributions welcome!`
+试金石 是开源的：上游代码在 [GitHub](https://github.com/Sage-Future/fatebook)，本仓库（fork）在 [GitHub](https://github.com/2EN0NE/assay)。`
 
 export default function AboutPage() {
   return (

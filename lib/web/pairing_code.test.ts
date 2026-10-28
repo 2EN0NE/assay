@@ -89,7 +89,7 @@ describe("兑换范围只限实例本机（loopback）", () => {
       isLocalRequest(local({ headers: { host: "mac-mini.local:3000" } })),
     ).toBe(false)
     expect(
-      isLocalRequest(local({ headers: { host: "fatebook.example.com" } })),
+      isLocalRequest(local({ headers: { host: "assay.example.com" } })),
     ).toBe(false)
   })
 

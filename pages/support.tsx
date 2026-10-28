@@ -6,9 +6,9 @@ export default function SupportPage() {
     <div className="prose mx-auto my-8">
       <ReactMarkdown remarkPlugins={[remarkGfm]}>
         {String.raw`
-Need help? Email us at hello@sage-future.org. 
-        
-[Back to nano-fatebook-agent](/)
+Need help? Open an issue on [GitHub](https://github.com/2EN0NE/assay/issues).
+
+[Back to 试金石](/)
         `}
       </ReactMarkdown>
     </div>

@@ -80,7 +80,7 @@ export default function BlogPage({ posts }: BlogPageProps) {
     <div className="px-4 pt-12 lg:pt-16 mx-auto max-w-6xl">
       <NextSeo title="Blog" />
       <div className="prose mx-auto">
-        <h2>Blog posts from the nano-fatebook-agent team</h2>
+        <h2>Blog posts from the 试金石 team</h2>
         {posts.length > 0 ? (
           <ul>
             {posts.map((post) => (

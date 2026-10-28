@@ -3,7 +3,7 @@ import { useSession } from "next-auth/react"
 import { NextSeo } from "next-seo"
 import { useQuestionId } from "../../lib/web/question_url"
 import { api } from "../../lib/web/trpc"
-import { signInToFatebook, truncateString } from "../../lib/web/utils"
+import { signInToAssay, truncateString } from "../../lib/web/utils"
 import { Question as QuestionComp } from "./Question"
 
 export function QuestionOrSignIn({
@@ -62,11 +62,7 @@ export function QuestionOrSignIn({
       </div>
     ) : (
       <h3 className="text-neutral-600">
-        <a
-          className="font-bold"
-          href="#"
-          onClick={() => void signInToFatebook()}
-        >
+        <a className="font-bold" href="#" onClick={() => void signInToAssay()}>
           Sign in{" "}
         </a>{" "}
         to view this question

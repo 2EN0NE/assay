@@ -49,8 +49,8 @@ function Sidebar() {
         {userId && <TrackRecord trackRecordUserId={userId} />}
         {userId && (
           <QuickFeedback
-            type="nano-fatebook-agent feedback"
-            placeholder="Give feedback on nano-fatebook-agent..."
+            type="试金石 feedback"
+            placeholder="Give feedback on 试金石..."
             style="textarea"
           />
         )}

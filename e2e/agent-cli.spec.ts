@@ -63,15 +63,15 @@ async function runCli(
     ["run", "--silent", "agent", "--", ...args],
     {
       cwd: process.cwd(),
-      // 清空 `FATEBOOK_AGENT_API_KEY`：否则开发者本机设过这把钥匙时，邮箱路径的
+      // 清空 `ASSAY_AGENT_API_KEY`：否则开发者本机设过这把钥匙时，邮箱路径的
       // 用例会静默走上另一条身份（ADR-0026 的优先级）。用空串而不是 `undefined`：
       // `npm run agent` 还会再 `dotenv -e .env` 一次，**缺失的键会被它从 `.env`
       // 补回来**；空串既拦得住注入（dotenv 不覆盖已存在的键），在 `context.ts`
       // 里又是 falsy（`if (apiKey)` 不进分支），因此回退到邮箱。
       env: {
         ...process.env,
-        FATEBOOK_AGENT_API_KEY: "",
-        FATEBOOK_AGENT_USER_EMAIL: ownerEmail,
+        ASSAY_AGENT_API_KEY: "",
+        ASSAY_AGENT_USER_EMAIL: ownerEmail,
       },
       maxBuffer: 10 * 1024 * 1024,
     },

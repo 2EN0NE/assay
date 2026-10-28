@@ -10,9 +10,9 @@ import { createAgentSession, createAnonymousSession } from "./context"
 /**
  * 身份分发（ADR-0015 / ADR-0021 / ADR-0026）。
  *
- * 优先级 `--api-key` > `FATEBOOK_AGENT_API_KEY` > `FATEBOOK_AGENT_USER_EMAIL`
+ * 优先级 `--api-key` > `ASSAY_AGENT_API_KEY` > `ASSAY_AGENT_USER_EMAIL`
  * 只写在 `cli/context.ts` 一处；它决定了"这条命令以谁的身份落库"，而测试此前
- * 只走过邮箱那条回退路径（e2e 的 `FATEBOOK_AGENT_USER_EMAIL`），
+ * 只走过邮箱那条回退路径（e2e 的 `ASSAY_AGENT_USER_EMAIL`），
  * 也就是说钥匙这条路错到什么程度都不会红。
  */
 
@@ -55,23 +55,23 @@ async function captureError(run: () => Promise<unknown>): Promise<unknown> {
 }
 
 beforeEach(() => {
-  delete process.env.FATEBOOK_AGENT_API_KEY
-  delete process.env.FATEBOOK_AGENT_API_KEY_FILE
-  delete process.env.FATEBOOK_AGENT_USER_EMAIL
+  delete process.env.ASSAY_AGENT_API_KEY
+  delete process.env.ASSAY_AGENT_API_KEY_FILE
+  delete process.env.ASSAY_AGENT_USER_EMAIL
   lookupByApiKey.mockResolvedValue(OWNER as never)
   userFindUnique.mockResolvedValue(OWNER as never)
 })
 
 afterEach(() => {
-  delete process.env.FATEBOOK_AGENT_API_KEY
-  delete process.env.FATEBOOK_AGENT_API_KEY_FILE
-  delete process.env.FATEBOOK_AGENT_USER_EMAIL
+  delete process.env.ASSAY_AGENT_API_KEY
+  delete process.env.ASSAY_AGENT_API_KEY_FILE
+  delete process.env.ASSAY_AGENT_USER_EMAIL
 })
 
 describe("createAgentSession —— 身份来源优先级（ADR-0026）", () => {
   it("--api-key 覆盖环境变量的钥匙（单条覆盖，用于测试与自动化）", async () => {
-    process.env.FATEBOOK_AGENT_API_KEY = "env-key"
-    process.env.FATEBOOK_AGENT_USER_EMAIL = "owner@example.com"
+    process.env.ASSAY_AGENT_API_KEY = "env-key"
+    process.env.ASSAY_AGENT_USER_EMAIL = "owner@example.com"
 
     const session = await createAgentSession({ apiKey: "flag-key" })
 
@@ -79,8 +79,8 @@ describe("createAgentSession —— 身份来源优先级（ADR-0026）", () => 
     expect(session.credentialSource).toBe("api-key-flag")
   })
 
-  it("没有 flag 时用 FATEBOOK_AGENT_API_KEY（项目级作用域的钥匙）", async () => {
-    process.env.FATEBOOK_AGENT_API_KEY = "env-key"
+  it("没有 flag 时用 ASSAY_AGENT_API_KEY（项目级作用域的钥匙）", async () => {
+    process.env.ASSAY_AGENT_API_KEY = "env-key"
 
     const session = await createAgentSession()
 
@@ -89,7 +89,7 @@ describe("createAgentSession —— 身份来源优先级（ADR-0026）", () => 
   })
 
   it("两把钥匙都没有时回退到邮箱（遗留路径仍然可用）", async () => {
-    process.env.FATEBOOK_AGENT_USER_EMAIL = "owner@example.com"
+    process.env.ASSAY_AGENT_USER_EMAIL = "owner@example.com"
 
     const session = await createAgentSession()
 
@@ -134,7 +134,7 @@ describe("createAgentSession —— 身份不可用时当场失败（不猜、�
   })
 
   it("钥匙无效 ⇒ 报错，**不**静默回退到邮箱（错误钥匙不能变成另一个人的身份）", async () => {
-    process.env.FATEBOOK_AGENT_USER_EMAIL = "owner@example.com"
+    process.env.ASSAY_AGENT_USER_EMAIL = "owner@example.com"
     lookupByApiKey.mockRejectedValue(new Error("no such key"))
 
     const error = await captureError(() =>
@@ -148,7 +148,7 @@ describe("createAgentSession —— 身份不可用时当场失败（不猜、�
   })
 
   it("邮箱找不到账号 ⇒ 报错并指向 init /api-setup", async () => {
-    process.env.FATEBOOK_AGENT_USER_EMAIL = "ghost@example.com"
+    process.env.ASSAY_AGENT_USER_EMAIL = "ghost@example.com"
     userFindUnique.mockResolvedValue(null)
 
     const error = await captureError(() => createAgentSession())
@@ -173,11 +173,8 @@ describe("createAnonymousSession —— 只给「自己解决身份」的命令�
   })
 })
 
-describe("凭据文件 FATEBOOK_AGENT_API_KEY_FILE（ADR-0036）", () => {
-  const keyFile = path.join(
-    os.tmpdir(),
-    `fatebook-agent-key-${process.pid}.txt`,
-  )
+describe("凭据文件 ASSAY_AGENT_API_KEY_FILE（ADR-0036）", () => {
+  const keyFile = path.join(os.tmpdir(), `assay-agent-key-${process.pid}.txt`)
 
   afterEach(() => {
     fs.rmSync(keyFile, { force: true })
@@ -185,7 +182,7 @@ describe("凭据文件 FATEBOOK_AGENT_API_KEY_FILE（ADR-0036）", () => {
 
   it("从文件读出的钥匙立即可用，且末尾换行不算凭据的一部分", async () => {
     fs.writeFileSync(keyFile, "file-key\n")
-    process.env.FATEBOOK_AGENT_API_KEY_FILE = keyFile
+    process.env.ASSAY_AGENT_API_KEY_FILE = keyFile
 
     const session = await createAgentSession()
 
@@ -195,8 +192,8 @@ describe("凭据文件 FATEBOOK_AGENT_API_KEY_FILE（ADR-0036）", () => {
 
   it("进程环境变量里的钥匙压过文件（显式覆盖优先，同 ADR-0036 的优先级）", async () => {
     fs.writeFileSync(keyFile, "file-key\n")
-    process.env.FATEBOOK_AGENT_API_KEY_FILE = keyFile
-    process.env.FATEBOOK_AGENT_API_KEY = "env-key"
+    process.env.ASSAY_AGENT_API_KEY_FILE = keyFile
+    process.env.ASSAY_AGENT_API_KEY = "env-key"
 
     const session = await createAgentSession()
 
@@ -204,12 +201,12 @@ describe("凭据文件 FATEBOOK_AGENT_API_KEY_FILE（ADR-0036）", () => {
     expect(session.credentialSource).toBe("api-key-env")
   })
 
-  it("空串的 FATEBOOK_AGENT_API_KEY 是**显式压制**：此时不再去看文件、回退到邮箱", async () => {
+  it("空串的 ASSAY_AGENT_API_KEY 是**显式压制**：此时不再去看文件、回退到邮箱", async () => {
     // e2e 的邮箱用例正是靠这一条（dotenv 不覆盖已存在的键，空串能挡住 `.env` 里的值）。
     fs.writeFileSync(keyFile, "file-key\n")
-    process.env.FATEBOOK_AGENT_API_KEY_FILE = keyFile
-    process.env.FATEBOOK_AGENT_API_KEY = ""
-    process.env.FATEBOOK_AGENT_USER_EMAIL = "owner@example.com"
+    process.env.ASSAY_AGENT_API_KEY_FILE = keyFile
+    process.env.ASSAY_AGENT_API_KEY = ""
+    process.env.ASSAY_AGENT_USER_EMAIL = "owner@example.com"
 
     const session = await createAgentSession()
 
@@ -221,11 +218,11 @@ describe("凭据文件 FATEBOOK_AGENT_API_KEY_FILE（ADR-0036）", () => {
   })
 
   it("文件读不到 ⇒ 当场报错，**不**静默回退到邮箱（那会变成另一个身份）", async () => {
-    process.env.FATEBOOK_AGENT_API_KEY_FILE = path.join(
+    process.env.ASSAY_AGENT_API_KEY_FILE = path.join(
       os.tmpdir(),
       "definitely-missing-key-file.txt",
     )
-    process.env.FATEBOOK_AGENT_USER_EMAIL = "owner@example.com"
+    process.env.ASSAY_AGENT_USER_EMAIL = "owner@example.com"
 
     const error = await captureError(() => createAgentSession())
 
@@ -237,7 +234,7 @@ describe("凭据文件 FATEBOOK_AGENT_API_KEY_FILE（ADR-0036）", () => {
 
   it("文件是空的（只有空白）⇒ 同样是硬失败，不当成「没设」", async () => {
     fs.writeFileSync(keyFile, "   \n")
-    process.env.FATEBOOK_AGENT_API_KEY_FILE = keyFile
+    process.env.ASSAY_AGENT_API_KEY_FILE = keyFile
 
     const error = await captureError(() => createAgentSession())
 
@@ -246,10 +243,10 @@ describe("凭据文件 FATEBOOK_AGENT_API_KEY_FILE（ADR-0036）", () => {
     expect(lookupByApiKey).not.toHaveBeenCalled()
   })
 
-  it("路径是空白 ⇒ 与 `FATEBOOK_AGENT_API_KEY=\"\"` 同语义（显式压制），不是「去读一个叫 '' 的文件」", async () => {
+  it("路径是空白 ⇒ 与 `ASSAY_AGENT_API_KEY=\"\"` 同语义（显式压制），不是「去读一个叫 '' 的文件」", async () => {
     // 服务单元模板里留空一个可选路径是常事；那不该变成一个看不出原因的错误。
-    process.env.FATEBOOK_AGENT_API_KEY_FILE = "   "
-    process.env.FATEBOOK_AGENT_USER_EMAIL = "owner@example.com"
+    process.env.ASSAY_AGENT_API_KEY_FILE = "   "
+    process.env.ASSAY_AGENT_USER_EMAIL = "owner@example.com"
     userFindUnique.mockResolvedValue(OWNER as never)
 
     const session = await createAgentSession()
@@ -270,7 +267,7 @@ describe("凭据文件 FATEBOOK_AGENT_API_KEY_FILE（ADR-0036）", () => {
  */
 describe("createAgentSession —— 调用方认证种类（ADR-0035）", () => {
   it("持钥匙 ⇒ credential（三种来源都是）", async () => {
-    process.env.FATEBOOK_AGENT_API_KEY = "env-key"
+    process.env.ASSAY_AGENT_API_KEY = "env-key"
 
     await createAgentSession()
 
@@ -280,7 +277,7 @@ describe("createAgentSession —— 调用方认证种类（ADR-0035）", () => 
   })
 
   it("只有邮箱 ⇒ identity-selector：它证明身份，不证明持有", async () => {
-    process.env.FATEBOOK_AGENT_USER_EMAIL = "owner@example.com"
+    process.env.ASSAY_AGENT_USER_EMAIL = "owner@example.com"
 
     await createAgentSession()
 

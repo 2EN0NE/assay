@@ -12,8 +12,8 @@ import { CliError } from "./args"
  * CLI 只是第二个传输层。这要求 `trpc_base` 不依赖 Next.js 的认证适配器——
  * 见 `lib/web/context.ts` 的注释。
  *
- * 身份来源按 ADR-0026 的优先级：`--api-key` > `FATEBOOK_AGENT_API_KEY` >
- * 遗留的 `FATEBOOK_AGENT_USER_EMAIL`。CLI 不在磁盘上记"当前身份"：每条命令自带。
+ * 身份来源按 ADR-0026 的优先级：`--api-key` > `ASSAY_AGENT_API_KEY` >
+ * 遗留的 `ASSAY_AGENT_USER_EMAIL`。CLI 不在磁盘上记"当前身份"：每条命令自带。
  */
 // 类型与判据都在叶子模块里：这个文件 import prisma，被它拖进来的东西都跑不了
 // 纯单测（见 `credential_source.ts` 的注释）。
@@ -38,7 +38,7 @@ function callerFor(userId: string | undefined, authentication: Authentication) {
 }
 
 /**
- * 凭据文件（ADR-0036）：`FATEBOOK_AGENT_API_KEY_FILE=<路径>`。
+ * 凭据文件（ADR-0036）：`ASSAY_AGENT_API_KEY_FILE=<路径>`。
  *
  * 加它的理由不是"多一种配置"，而是**秘密不该出现在命令行**：`--api-key` 会进
  * `ps` 与 shell 历史。文件方式让"这台机器上的这个进程是哪个身份"有一个可写进
@@ -55,7 +55,7 @@ function readApiKeyFile(path: string): string {
   } catch {
     throw new CliError(
       `读不到凭据文件：${path}`,
-      "检查 FATEBOOK_AGENT_API_KEY_FILE 指向的路径；文件里应当只有一把钥匙。",
+      "检查 ASSAY_AGENT_API_KEY_FILE 指向的路径；文件里应当只有一把钥匙。",
     )
   }
 
@@ -75,9 +75,9 @@ function readApiKeyFile(path: string): string {
  * 并列的阶梯，改一处就会让 `whoami` 报出来的来源与实际用的钥匙不是同一把，而且
  * 没有任何症状。返回 `null` = 这次没有凭据（走身份选择器）。
  *
- * 优先级：`--api-key` > `FATEBOOK_AGENT_API_KEY` > `FATEBOOK_AGENT_API_KEY_FILE`。
+ * 优先级：`--api-key` > `ASSAY_AGENT_API_KEY` > `ASSAY_AGENT_API_KEY_FILE`。
  * 用"是否给出"（`!== undefined`）而不是真值判断：**空串是显式压制**——`dotenv`
- * 不覆盖已存在的键，所以 `FATEBOOK_AGENT_API_KEY=""` 能挡住 `.env` 里的值
+ * 不覆盖已存在的键，所以 `ASSAY_AGENT_API_KEY=""` 能挡住 `.env` 里的值
  * （e2e 靠这条走邮箱路径），此时也不该再往下找凭据文件。
  *
  * 空白路径 = **没设**，而不是"去读一个叫 '' 的文件"：服务单元（systemd / launchd）
@@ -90,12 +90,12 @@ function resolveApiKey(
     return flagKey === "" ? null : { key: flagKey, source: "api-key-flag" }
   }
 
-  const envKey = process.env.FATEBOOK_AGENT_API_KEY
+  const envKey = process.env.ASSAY_AGENT_API_KEY
   if (envKey !== undefined) {
     return envKey === "" ? null : { key: envKey, source: "api-key-env" }
   }
 
-  const keyFilePath = (process.env.FATEBOOK_AGENT_API_KEY_FILE ?? "").trim()
+  const keyFilePath = (process.env.ASSAY_AGENT_API_KEY_FILE ?? "").trim()
   if (keyFilePath === "") return null
   return { key: readApiKeyFile(keyFilePath), source: "api-key-file" }
 }
@@ -128,11 +128,11 @@ export async function createAgentSession(
     }
   }
 
-  const email = process.env.FATEBOOK_AGENT_USER_EMAIL
+  const email = process.env.ASSAY_AGENT_USER_EMAIL
   if (!email) {
     throw new CliError(
-      "没有可用身份：既没给凭据，也没设 FATEBOOK_AGENT_USER_EMAIL",
-      "设 FATEBOOK_AGENT_API_KEY=<钥匙>（推荐，或 FATEBOOK_AGENT_API_KEY_FILE=<路径> 以免进 shell 历史），或 FATEBOOK_AGENT_USER_EMAIL=<已有账号的邮箱>（遗留）。",
+      "没有可用身份：既没给凭据，也没设 ASSAY_AGENT_USER_EMAIL",
+      "设 ASSAY_AGENT_API_KEY=<钥匙>（推荐，或 ASSAY_AGENT_API_KEY_FILE=<路径> 以免进 shell 历史），或 ASSAY_AGENT_USER_EMAIL=<已有账号的邮箱>（遗留）。",
     )
   }
 
@@ -140,7 +140,7 @@ export async function createAgentSession(
   if (!user) {
     throw new CliError(
       `找不到邮箱为 ${email} 的账号`,
-      "用 `init` 建一个身份，或把 FATEBOOK_AGENT_USER_EMAIL 改成已存在的邮箱。",
+      "用 `init` 建一个身份，或把 ASSAY_AGENT_USER_EMAIL 改成已存在的邮箱。",
     )
   }
 

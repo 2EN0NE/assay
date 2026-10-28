@@ -39,11 +39,13 @@ export const ambiguousResolutionColumnSpacing: number =
   forecastListColumnSpacing - 1
 
 export const feedbackFormUrl = "https://forms.gle/nHkwvMFCjtNBHAT69"
+export const repoUrl = "https://github.com/2EN0NE/assay"
+export const repoIssuesUrl = repoUrl + "/issues"
 export const quantifiedIntuitionsUrl = "https://quantifiedintuitions.org/"
 export const questionWritingTipsUrl =
   "https://docs.google.com/document/d/1yQnNLrLCLr9dQs01vsNwIPV5-cp1PUFMcLvPuSt4KNg"
-export const fatebookUrl = "https://localhost:3000/" // TODO: over time change usages to this constant
-export const defaultDisplayPictureUrl = fatebookUrl + "default_avatar.png"
+export const appUrl = "https://localhost:3000/" // TODO: over time change usages to this constant
+export const defaultDisplayPictureUrl = appUrl + "default_avatar.png"
 
 // Special workspaces
 // Omit from analytics
@@ -52,7 +54,6 @@ export const TEST_WORKSPACES = [
   "T04U374T602", // ForecastBot
   "T052V4YQDPS", // forecast-test-2
   "T0532NY1SV8", // Adam ForecastBot
-  "T0554AC87T6", // fatebook-staging
 ]
 // Show extra `install` note in questions in these workspaces
 export const CONNECTOR_WORKSPACES = [

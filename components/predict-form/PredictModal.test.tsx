@@ -21,7 +21,7 @@ describe("PredictModal", () => {
     const { getByTestId } = render(<PredictModal />)
     expect(getByTestId("predict-textarea")).toBeInTheDocument()
 
-    // Regression: event.data can be null; reading .isFatebook must not throw.
+    // Regression: event.data can be null; reading .isAssay must not throw.
     expect(() => {
       act(() => {
         window.dispatchEvent(new MessageEvent("message", { data: null }))
@@ -36,7 +36,7 @@ describe("PredictModal", () => {
     act(() => {
       window.dispatchEvent(
         new MessageEvent("message", {
-          data: { isFatebook: true, action: "focus_modal" },
+          data: { isAssay: true, action: "focus_modal" },
         }),
       )
     })

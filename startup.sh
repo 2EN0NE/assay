@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# nano-fatebook-agent 一键起步。
+# 试金石 一键起步。
 #
 # 目标：clone 下来跑这一个脚本，按提示走完，就能①打开本地 Web 页面、②在 pi 里
 # 跟 agent 对话记录决策。可以重复执行——每一步都先看状态再决定要不要做。
@@ -61,8 +61,8 @@ npx prisma migrate deploy
 step "准备一个身份"
 read_env() { grep -E "^$1=" .env | head -1 | cut -d= -f2- || true; }
 
-if [ -n "$(read_env FATEBOOK_AGENT_API_KEY)" ]; then
-  info ".env 里已有 FATEBOOK_AGENT_API_KEY"
+if [ -n "$(read_env ASSAY_AGENT_API_KEY)" ]; then
+  info ".env 里已有 ASSAY_AGENT_API_KEY"
   info "自检：npm run --silent agent -- whoami"
 else
   # 交互性判断：没有 tty 时（CI、管道、被其它程序调用）**绝不能**去 read ——
@@ -76,7 +76,7 @@ else
   label="${STARTUP_LABEL:-}"
 
   if [ "$interactive" = "1" ] && [ -z "$mode" ]; then
-    info "还没有凭据（FATEBOOK_AGENT_API_KEY）。两种来源："
+    info "还没有凭据（ASSAY_AGENT_API_KEY）。两种来源："
     info "  [1] 现在新建一个身份：不需要邮箱、不需要浏览器（ADR-0022）"
     info "  [2] 我已有钥匙：Web 登录后到 /api-setup 复制那串 API key"
     printf '   选择 [1/2]（默认 1）：'
@@ -106,7 +106,7 @@ else
     info "已创建身份：$identity_email"
   fi
 
-  printf '\n# 由 startup.sh 写入：CLI 与 pi 的身份凭据（ADR-0021）\nFATEBOOK_AGENT_API_KEY=%s\n' "$want_key" >>.env
+  printf '\n# 由 startup.sh 写入：CLI 与 pi 的身份凭据（ADR-0021）\nASSAY_AGENT_API_KEY=%s\n' "$want_key" >>.env
   info "已写入 .env（该文件被 git 忽略，不会进版本库）"
 fi
 

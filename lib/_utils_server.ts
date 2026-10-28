@@ -55,7 +55,7 @@ export async function backendAnalyticsEvent(
     {
       method: "POST",
       body: JSON.stringify({
-        client_id: "nano-fatebook-agent-backend",
+        client_id: "试金石-backend",
         events: [
           {
             name,
@@ -74,14 +74,14 @@ export async function backendAnalyticsEvent(
   }
 }
 
-export async function userHasTarget(fatebookUserId: string) {
-  return (await getTarget(fatebookUserId)) !== null
+export async function userHasTarget(userId: string) {
+  return (await getTarget(userId)) !== null
 }
 
-export async function getTarget(fatebookUserId: string) {
+export async function getTarget(userId: string) {
   return await prisma.target.findFirst({
     where: {
-      userId: fatebookUserId,
+      userId,
     },
   })
 }
@@ -158,17 +158,14 @@ export function sameDate(date1: Date, date2: Date) {
   )
 }
 
-export async function getCurrentTargetProgress(
-  fatebookUserId: string,
-  target: Target,
-) {
+export async function getCurrentTargetProgress(userId: string, target: Target) {
   let count = 0
   let previousPeriodStart = target.lastNotified
   switch (target.type) {
     case TargetType.FORECAST:
       count = await prisma.forecast.count({
         where: {
-          userId: fatebookUserId,
+          userId,
           createdAt: {
             gte: previousPeriodStart,
           },
@@ -178,7 +175,7 @@ export async function getCurrentTargetProgress(
     case TargetType.QUESTION:
       count = await prisma.question.count({
         where: {
-          userId: fatebookUserId,
+          userId,
           createdAt: {
             gte: previousPeriodStart,
           },

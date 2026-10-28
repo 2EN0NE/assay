@@ -441,6 +441,15 @@ export function capitalizeFirstLetter(str: string) {
   return str.charAt(0).toUpperCase() + str.slice(1)
 }
 
+/**
+ * 邮件列表的 product / tag 是**外部服务的标识符**（quantifiedintuitions.org 的订阅接口），
+ * 不是本项目的品牌文案：改名后必须在服务端登记同名 product / tag，否则订阅者会落进空分组
+ * 或未分群。而调用方 `subscribeToMailingListSafely` 刻意只 warn 不失败，所以这类不匹配
+ * **不会当场报错**——见 ADR-0042。
+ */
+const MAILING_LIST_PRODUCT = "试金石"
+const MAILING_LIST_TAG = "assay-user"
+
 export async function subscribeToMailingList(email: string, name?: string) {
   if (!process.env.MAILING_LIST_SECRET) {
     throw new Error("MAILING_LIST_SECRET is not set")
@@ -457,8 +466,8 @@ export async function subscribeToMailingList(email: string, name?: string) {
         subscribers: [
           {
             email,
-            tags: ["fatebook-user"],
-            products: ["nano-fatebook-agent"],
+            tags: [MAILING_LIST_TAG],
+            products: [MAILING_LIST_PRODUCT],
             name,
           },
         ],

@@ -357,7 +357,7 @@ const personalSuggestions = (year: number) => [
         q: `Will I resolve all of my yearly ${year} predictions at the end of the year?`,
       },
       {
-        q: `Will I use nano-fatebook-agent to predict the *next* year at the end of ${year}?`,
+        q: `Will I use 试金石 to predict the *next* year at the end of ${year}?`,
       },
       {
         q: `Will >5 of my ${year} predictions be too ambiguous to resolve as YES or NO?`,
@@ -372,7 +372,7 @@ const personalSuggestions = (year: number) => [
         q: `Will my predictions about my life in ${year} be more accurate than any of my friends?`,
       },
       {
-        label: `We'll send you a reminder at the end of ${year} to reflect on your predictions and record what actually happened.\n\nIn the meantime, you can always come back to [nano-fatebook-agent](https://localhost:3000) to update your predictions or add new ones.\n\nYou can also use nano-fatebook-agent to predict day-to-day - e.g. 'will I finish writing this blogpost by the end of the day?'\n\nYou can use nano-fatebook-agent through [localhost:3000](https://localhost:3000), [nano-fatebook-agent for Slack](https://localhost:3000/for-slack) or anywhere on the web with the [browser extension](https://localhost:3000/browser-extension).\n\nHere's to a great ${year}!`,
+        label: `We'll send you a reminder at the end of ${year} to reflect on your predictions and record what actually happened.\n\nIn the meantime, you can always come back to [试金石](https://localhost:3000) to update your predictions or add new ones.\n\nYou can also use 试金石 to predict day-to-day - e.g. 'will I finish writing this blogpost by the end of the day?'\n\nYou can use 试金石 through [localhost:3000](https://localhost:3000), [试金石 for Slack](https://localhost:3000/for-slack) or anywhere on the web with the [browser extension](https://localhost:3000/browser-extension).\n\nHere's to a great ${year}!`,
       },
     ],
   },
@@ -536,7 +536,7 @@ const teamSuggestions = (year: number) => [
         q: `Will we resolve all of our yearly ${year} predictions at the end of the year?`,
       },
       {
-        q: `Will we use nano-fatebook-agent to predict the *next* year at the end of ${year}?`,
+        q: `Will we use 试金石 to predict the *next* year at the end of ${year}?`,
       },
       {
         q: `Will >5 of our ${year} predictions be too ambiguous to resolve as YES or NO?`,
@@ -551,7 +551,7 @@ const teamSuggestions = (year: number) => [
         q: `Will <x>'s predictions about our team in ${year} be more accurate than any other team member?`,
       },
       {
-        q: `Will our team make at least <x> forecasts via nano-fatebook-agent for Slack during ${year}?`,
+        q: `Will our team make at least <x> forecasts via 试金石 for Slack during ${year}?`,
       },
     ],
   },

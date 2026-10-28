@@ -12,93 +12,55 @@ export default function PrivacyPage() {
 }
 
 const privacyMd = String.raw`
-Privacy Policy for nano-fatebook-agent
-==================================
+隐私说明
+========
 
-_If you have questions about our privacy policy or want us to change something, get in touch at hello@sage-future.org._
+本实例（默认 localhost:3000）是**个人自用部署**：没有运营主体，也没有"公司"在收集你的数据。下面只写它**实际**处理的东西。
 
-At nano-fatebook-agent, accessible from localhost:3000 and through our app for Slack, Chrome, and API, a core priority is the privacy of our visitors. This Privacy Policy document contains types of information that is collected and recorded by nano-fatebook-agent and how we use it.
+数据存在哪里
+------------
 
-This Privacy Policy applies only to our online activities and is valid for visitors to our website and app for Slack with regards to the information that they shared and/or collect in nano-fatebook-agent. This policy is not applicable to any information collected offline.
+全部在**运行它的那台机器上的 Postgres 里**。没有云端备份，也没有别处的副本——备份与删除都由实例主人负责。
 
-Consent
--------
+登录
+----
 
-By using our website, you hereby consent to our Privacy Policy and agree to its terms.
+只用**邮件魔法链接**：输入邮箱 → 收到一封带登录链接的信 → 点开即登录。因此保存的只有**邮箱地址**与**会话 Cookie**；不收集姓名、头像或第三方社交账号信息。
 
-Information we collect
-----------------------
+本地开发时这封信不进真邮箱，而是被 Mailpit 截在 <http://localhost:8025>。
 
-The personal information that you are asked to provide, and the reasons why you are asked to provide it, will be made clear to you at the point we ask you to provide your personal information.
+会发出的邮件
+------------
 
-If you contact us directly, we may receive additional information about you such as your name, email address, the contents of the message and/or attachments you may send us, and any other information you may choose to provide.
+登录链接，以及你自己设了结算期限时的提醒邮件。每封信都带退订入口（/unsubscribe），退订状态存在本机数据库。
 
-You can register for an Account by signing in with Google or using the Slack app. When you do so, we receive your Google/Slack account's name (to set your username in nano-fatebook-agent), email address (to send you email notifications, if you use the web app) and your profile picture URL (to set your profile picture in nano-fatebook-agent).
+日志
+----
 
-How we use your information
----------------------------
+Prisma 的查询日志与 Next.js 的服务日志都写在**本机**，只用于排错。
 
-We use the information we collect in various ways, including to:
+第三方服务（只有你配置了才会用到）
+----------------------------------
 
--   Provide, operate, and maintain our website
--   Understand and analyze how you use our website
--   Send you emails or Slack messages. You can unsubscribe from these at any time.
--   Find and prevent fraud
+| 服务                                 | 何时使用                                  | 出去的是什么         |
+| ------------------------------------ | ----------------------------------------- | -------------------- |
+| Postmark                             | 配了 POSTMARK_API_TOKEN 时发真实邮件      | 收件人邮箱、邮件正文 |
+| 邮件列表（quantifiedintuitions.org） | 配了 MAILING_LIST_SECRET 时               | 注册邮箱、产品与标签 |
+| Google Analytics                     | 配了 NEXT_PUBLIC_GA_MEASUREMENT_ID 时     | 使用事件（页面、命令） |
 
-**We never look at your privately shared forecasting questions unless you explicitly share them with us.** We may calculate aggregate statistics, e.g. to calculate the average accuracy of all nano-fatebook-agent users or count the number of forecasts made per day on nano-fatebook-agent.
+一个都没配就什么都出不去。
 
-Log files
----------
+你的选择
+--------
 
-nano-fatebook-agent follows a standard procedure of using log files. These files log visitors when they visit websites. All hosting companies do this and a part of hosting services' analytics. The information collected by log files include internet protocol (IP) addresses, browser type, Internet Service Provider (ISP), date and time stamp, referring/exit pages, and possibly the number of clicks. These are not linked to any information that is personally identifiable. The purpose of the information is for analyzing trends, administering the site, tracking users' movement on the website, and gathering demographic information.
+- **导出**：页面上的 "Export all your forecasts" 随时导出 CSV。
+- **退订**：每封邮件里的链接，或 /unsubscribe。
+- **删除**：直接删本机数据库里的对应记录（或整个库）。没有别人保管你的副本，也没有别人需要批准。
 
-CCPA Privacy Rights (Do Not Sell My Personal Information)
----------------------------------------------------------
+变更
+----
 
-Under the CCPA, among other rights, California consumers have the right to:
+这份说明随仓库一起变更，历史版本见 git 记录。
 
-Request that a business that collects a consumer's personal data disclose the categories and specific pieces of personal data that a business has collected about consumers.
-
-Request that a business delete any personal data about the consumer that a business has collected.
-
-Request that a business that sells a consumer's personal data, not sell the consumer's personal data.
-
-If you make a request, we have one month to respond to you. If you would like to exercise any of these rights, please contact us.
-
-GDPR Data Protection Rights
----------------------------
-
-We will retain your personal data indefinitely, so that you can continue to use the service. If you would like us to delete your data, please contact us.
-
-We would like to make sure you are fully aware of all of your data protection rights. Every user is entitled to the following:
-
-The right to access -- You have the right to request copies of your personal data. You can export all your data from nano-fatebook-agent at any time - click "Export all your forecasts".
-
-The right to rectification -- You have the right to request that we correct any information you believe is inaccurate. You also have the right to request that we complete the information you believe is incomplete.
-
-The right to erasure -- You have the right to request that we erase your personal data, under certain conditions.
-
-The right to restrict processing -- You have the right to request that we restrict the processing of your personal data, under certain conditions.
-
-The right to object to processing -- You have the right to object to our processing of your personal data, under certain conditions.
-
-The right to data portability -- You have the right to request that we transfer the data that we have collected to another organization, or directly to you, under certain conditions.
-
-If you make a request, we have one month to respond to you. If you would like to exercise any of these rights, please contact us.
-
-Children's Information
-----------------------
-
-Another part of our priority is adding protection for children while using the internet. We encourage parents and guardians to observe, participate in, and/or monitor and guide their online activity.
-
-nano-fatebook-agent does not knowingly collect any Personal Identifiable Information from children under the age of 13. If you think that your child provided this kind of information on our website, we strongly encourage you to contact us immediately and we will do our best efforts to promptly remove such information from our records.
-
-Changes to This Privacy Policy
-------------------------------
-
-We may update our Privacy Policy from time to time. Thus, we advise you to review this page periodically for any changes. We will notify you of any changes by posting the new Privacy Policy on this page. These changes are effective immediately, after they are posted on this page.
-
-Contact Us
-----------
-
-If you have any questions or suggestions about our Privacy Policy, do not hesitate to contact us at hello@sage-future.org.`
+有问题到仓库开 issue：<https://github.com/2EN0NE/assay/issues>
+`

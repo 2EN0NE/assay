@@ -25,7 +25,7 @@ export default function PredictModal() {
     return window.addEventListener("message", (event) => {
       if (
         typeof event.data === "object" &&
-        event.data?.isFatebook &&
+        event.data?.isAssay &&
         event.data.action === "focus_modal"
       ) {
         textAreaRef.current?.focus()

@@ -560,7 +560,7 @@ export const commands: Command[] = [
       "签发一次性配对码：在本机浏览器把它换成该身份的网页会话（ADR-0035；默认关闭）",
     usage: "issue-pairing-code",
     // 三道检查，每一道都有理由：
-    // 1. **凭据**（ADR-0035）：签发是"持有凭据者"的动作。`FATEBOOK_AGENT_USER_EMAIL`
+    // 1. **凭据**（ADR-0035）：签发是"持有凭据者"的动作。`ASSAY_AGENT_USER_EMAIL`
     //    只是身份选择器（不含秘密，谁设了都能以该身份跑命令），签不了码。过程层的
     //    `credentialProcedure` 是真正的门禁；这里这一次只为给出可读的提示。
     // 2. **开关**：关着的时候签出来的码兑不了，而人要到浏览器里才发现。
@@ -570,7 +570,7 @@ export const commands: Command[] = [
       if (!isCredentialSource(credentialSource)) {
         throw new CliError(
           "签发配对码要求持有凭据（API key）",
-          "FATEBOOK_AGENT_USER_EMAIL 只是身份选择器，不含秘密，证明不了「持有」（ADR-0021 / ADR-0035）。用 `whoami` 看当前来源；改成 FATEBOOK_AGENT_API_KEY 或 FATEBOOK_AGENT_API_KEY_FILE 再签发。",
+          "ASSAY_AGENT_USER_EMAIL 只是身份选择器，不含秘密，证明不了「持有」（ADR-0021 / ADR-0035）。用 `whoami` 看当前来源；改成 ASSAY_AGENT_API_KEY 或 ASSAY_AGENT_API_KEY_FILE 再签发。",
         )
       }
       if (!isPairingLoginEnabled(process.env)) {

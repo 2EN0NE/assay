@@ -7,13 +7,13 @@ import { authOptions } from "../../pages/api/auth/[...nextauth]"
  * 调用方是**谁、凭什么**（ADR-0035）。
  *
  * 这一格存在的唯一理由：把「持有凭据」与「有会话」「只是选了身份」分开。签发配对码
- * 只认第一种，而网页会话与 `FATEBOOK_AGENT_USER_EMAIL` 都不是凭据——不分开，那句
+ * 只认第一种，而网页会话与 `ASSAY_AGENT_USER_EMAIL` 都不是凭据——不分开，那句
  * 「只有已经持有该身份凭据的一方可签发」就只是一句注释。
  *
  * - `session`：网页会话。邮件门与配对码门**等价**（配对码换来的就是它），所以配对码
  *   兑换出来的会话也不能再签发——否则那扇门能把自己续成新的长期 token。
  * - `credential`：CLI 进程里解析出的 API key（`--api-key` / 环境变量 / 凭据文件）。
- * - `identity-selector`：只有 `FATEBOOK_AGENT_USER_EMAIL`。它不含秘密，谁设了都能以
+ * - `identity-selector`：只有 `ASSAY_AGENT_USER_EMAIL`。它不含秘密，谁设了都能以
  *   该身份跑命令（ADR-0021 的本机信任模型），因此它证明得了身份，证明不了「持有」。
  * - `none`：身份还不存在——`init` 自己解决身份的那一刻。
  */

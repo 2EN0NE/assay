@@ -11,7 +11,7 @@
       // - Log in in a regular (non-debugger) Chrome instance and copy this cookie to the debugger version: __Secure-next-auth.session-token
       //
       // See here for discussion of the bug: https://stackoverflow.com/questions/66341079/unable-to-login-to-web-app-when-using-vscode-chrome-debugger
-      "name": "Next.js: debug fatebook full stack",
+      "name": "Next.js: debug 试金石 full stack",
       "type": "node-terminal",
       "request": "launch",
       "command": "nvm use 18 && npm run dev",

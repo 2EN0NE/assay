@@ -4,19 +4,17 @@ export default function ImpactSurveyPage() {
   return (
     <div className="bg-neutral-50 grow">
       <NextSeo
-        title="nano-fatebook-agent impact survey"
-        titleTemplate="nano-fatebook-agent impact survey"
-        description="Help us evaluate nano-fatebook-agent's impact and figure out what to do next"
+        title="试金石 impact survey"
+        titleTemplate="试金石 impact survey"
+        description="Help us evaluate 试金石's impact and figure out what to do next"
       />
       <div className="px-4 pt-12 lg:pt-16 mx-auto max-w-5xl">
         <div className="prose mx-auto">
           <h2 className="text-3xl mb-2 font-extrabold text-neutral-900">
-            nano-fatebook-agent impact survey
+            试金石 impact survey
           </h2>
           <h3 className="text-neutral-600">
-            {
-              "Help us evaluate nano-fatebook-agent's impact and figure out what to do next"
-            }
+            {"Help us evaluate 试金石's impact and figure out what to do next"}
           </h3>
         </div>
         <iframe

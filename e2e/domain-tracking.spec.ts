@@ -18,7 +18,7 @@ const execFileAsync = promisify(execFile)
  * 会看到的同一个过程；夹具用 prisma 直接造（"他人确认的结算"在 CLI 上没有命令能产生，
  * 而它正是悬空的成因）。
  *
- * 身份不经过浏览器：CLI 用邮箱解析已存在的 owner（`FATEBOOK_AGENT_USER_EMAIL`），
+ * 身份不经过浏览器：CLI 用邮箱解析已存在的 owner（`ASSAY_AGENT_USER_EMAIL`），
  * 所以这两条链路不需要 dev server，也不需要 Playwright 的登录流程。
  */
 
@@ -31,8 +31,8 @@ async function runCli(args: string[], ownerEmail: string): Promise<string> {
       env: {
         ...process.env,
         // 空串拦住 `.env` 里的钥匙（dotenv 不覆盖已存在的键），让身份走邮箱那条路
-        FATEBOOK_AGENT_API_KEY: "",
-        FATEBOOK_AGENT_USER_EMAIL: ownerEmail,
+        ASSAY_AGENT_API_KEY: "",
+        ASSAY_AGENT_USER_EMAIL: ownerEmail,
       },
       maxBuffer: 10 * 1024 * 1024,
     },

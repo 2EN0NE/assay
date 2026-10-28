@@ -1,6 +1,6 @@
 {
-  "name": "nano-fatebook-agent",
-  "repository": "https://github.com/2EN0NE/nano-fatebook-agent",
+  "name": "assay",
+  "repository": "https://github.com/2EN0NE/assay",
   "license": "MIT",
   "private": true,
   "type": "module",
@@ -14,12 +14,11 @@
     "lint": "next lint --dir lib --dir pages --dir components --dir cli --dir e2e",
     "format": "prettier --write .",
     "studio": "prisma studio",
-    "zip": "echo \"have you set isDev=false and incremented version num?\" && bash zip-extensions.sh",
     "prepare": "husky install",
     "test": "LC_ALL=en-US jest",
     "test:coverage": "LC_ALL=en-US jest --coverage",
     "test:e2e": "playwright test",
-    "dev:e2e": "FATEBOOK_ENABLE_PAIRING_LOGIN=1 NEXTAUTH_URL=http://localhost:3000/api/auth HOST_URL=http://localhost:3000 dotenv next dev -- -p 3000",
+    "dev:e2e": "ASSAY_ENABLE_PAIRING_LOGIN=1 NEXTAUTH_URL=http://localhost:3000/api/auth HOST_URL=http://localhost:3000 dotenv next dev -- -p 3000",
     "startup": "bash startup.sh",
     "agent": "dotenv -e .env -- tsx cli/index.ts",
     "typecheck": "tsc --noEmit"

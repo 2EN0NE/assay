@@ -15,7 +15,7 @@ jest.mock("./notifications", () => ({
   sendBatchedEmails: jest.fn(),
   sendEmailWithTemplateUnbatched: jest.fn(),
   sendEmailUnbatched: jest.fn(),
-  fatebookEmailFooter: jest.fn(),
+  assayEmailFooter: jest.fn(),
 }))
 
 // Avoid loading question_url -> trpc -> trpc-transformer -> superjson (ESM) in jsdom

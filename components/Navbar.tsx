@@ -8,7 +8,7 @@ import { useRouter } from "next/router"
 import { ReactNode, useState } from "react"
 import { toast } from "react-hot-toast"
 import { api } from "../lib/web/trpc"
-import { downloadBlob, signInToFatebook, useUserId } from "../lib/web/utils"
+import { downloadBlob, signInToAssay, useUserId } from "../lib/web/utils"
 import Footer from "./Footer"
 import NotificationsPopover from "./NotificationsPopover"
 import { PromptDialog } from "./ui/PromptDialog"
@@ -59,7 +59,7 @@ function NavbarContent({
       <div className="flex-1 -ml-4 flex gap-0">
         <Link href="/" className="btn btn-ghost normal-case text-xl flex gap-2">
           <ScaleIcon className="w-6 h-6 text-indigo-600" />
-          nano-fatebook-agent
+          试金石
         </Link>
       </div>
       <div className="flex-none hidden lg:block">
@@ -196,11 +196,7 @@ function useExportData() {
         alert("Nothing to export! Make some forecasts first?")
         return
       }
-      downloadBlob(
-        data,
-        "nano-fatebook-agent-forecasts.csv",
-        "text/csv;charset=utf-8;",
-      )
+      downloadBlob(data, "试金石-forecasts.csv", "text/csv;charset=utf-8;")
     },
   })
 }
@@ -329,7 +325,7 @@ function AccountMenu(showCreateAccountButton: boolean) {
     </>
   ) : (
     showCreateAccountButton && (
-      <button className="btn" onClick={() => void signInToFatebook()}>
+      <button className="btn" onClick={() => void signInToAssay()}>
         Log in or sign up
       </button>
     )

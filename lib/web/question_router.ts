@@ -31,7 +31,7 @@ import prisma from "../prisma"
 import { questionsToCsv } from "./export"
 import {
   createNotification,
-  fatebookEmailFooter,
+  assayEmailFooter,
   sendEmailUnbatched,
 } from "./notifications"
 import { getQuestionUrl } from "./question_url"
@@ -327,7 +327,7 @@ export const questionRouter = router({
       z.object({
         apiKey: z.string({
           description:
-            "Your nano-fatebook-agent API key. Get it at localhost:3000/api-setup",
+            "Your 试金石 API key. Get it at localhost:3000/api-setup",
         }),
         ...{
           ...zodExtraFilters.shape,
@@ -1715,8 +1715,8 @@ export async function emailNewlySharedWithUsers(
           )}</p>
 <p><a href=${getQuestionUrl(
             question,
-          )}>See ${author}'s prediction and add your own on nano-fatebook-agent.</a></p>
-${fatebookEmailFooter()}`,
+          )}>See ${author}'s prediction and add your own on 试金石.</a></p>
+${assayEmailFooter()}`,
         })
       }
     }),

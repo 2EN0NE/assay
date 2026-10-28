@@ -18,7 +18,7 @@ import {
 import { api } from "../../lib/web/trpc"
 import {
   invalidateQuestion,
-  signInToFatebook,
+  signInToAssay,
   useUserId,
 } from "../../lib/web/utils"
 import { QuestionWithStandardIncludes } from "../../prisma/additional"
@@ -67,7 +67,7 @@ export const QuestionDetails = forwardRef(function QuestionDetails(
           <div className="flex w-full p-4">
             <button
               className="button primary mx-auto"
-              onClick={() => void signInToFatebook()}
+              onClick={() => void signInToAssay()}
             >
               Sign in to add your own prediction
             </button>

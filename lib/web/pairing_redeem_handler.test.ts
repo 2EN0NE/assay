@@ -107,7 +107,7 @@ async function call(
 }
 
 const savedEnv = {
-  flag: process.env.FATEBOOK_ENABLE_PAIRING_LOGIN,
+  flag: process.env.ASSAY_ENABLE_PAIRING_LOGIN,
   secret: process.env.SECRET,
   nodeEnv: process.env.NODE_ENV,
 }
@@ -116,7 +116,7 @@ beforeEach(() => {
   jest.clearAllMocks()
   sourceIndex += 1
   source = `127.0.0.${sourceIndex}`
-  process.env.FATEBOOK_ENABLE_PAIRING_LOGIN = "1"
+  process.env.ASSAY_ENABLE_PAIRING_LOGIN = "1"
   process.env.SECRET = "test-secret"
   redeemPairingCode.mockResolvedValue(null)
   userFindUnique.mockResolvedValue({
@@ -128,7 +128,7 @@ beforeEach(() => {
 
 afterEach(() => {
   for (const [key, value] of [
-    ["FATEBOOK_ENABLE_PAIRING_LOGIN", savedEnv.flag],
+    ["ASSAY_ENABLE_PAIRING_LOGIN", savedEnv.flag],
     ["SECRET", savedEnv.secret],
     ["NODE_ENV", savedEnv.nodeEnv],
   ] as const) {
@@ -169,7 +169,7 @@ describe("请求形状：只收 POST + JSON", () => {
 
 describe("门的顺序：开关 → 回环 → 限流 → 领码", () => {
   it("开关关闭 ⇒ 404，且不领码", async () => {
-    delete process.env.FATEBOOK_ENABLE_PAIRING_LOGIN
+    delete process.env.ASSAY_ENABLE_PAIRING_LOGIN
 
     const res = await call()
 
@@ -188,7 +188,7 @@ describe("门的顺序：开关 → 回环 → 限流 → 领码", () => {
   })
 
   it("Host 不是回环（远端经反代后 socket 仍是 127.0.0.1）⇒ 403", async () => {
-    const res = await call({ headers: { host: "fatebook.home:3000" } })
+    const res = await call({ headers: { host: "assay.home:3000" } })
 
     expect(res.statusCode).toBe(403)
     expect(redeemPairingCode).not.toHaveBeenCalled()

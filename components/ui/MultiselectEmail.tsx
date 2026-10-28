@@ -161,7 +161,7 @@ function UsernameWithEmail({ user, link }: { user: User; link?: boolean }) {
           )
         ) : (
           <span className="block font-medium text-neutral-700 italic text-sm cursor-default">
-            ✉️ Invited to nano-fatebook-agent
+            ✉️ Invited to 试金石
           </span>
         )}
         <span className="block text-neutral-500 text-sm">{user.email}</span>

@@ -12,7 +12,7 @@ import { createAgentSession, createAnonymousSession } from "./context"
 
 function printHelp(): void {
   const lines = [
-    "nano-fatebook-agent CLI —— Agent 读写决策记录的入口（ADR-0015）",
+    "试金石 CLI —— Agent 读写决策记录的入口（ADR-0015）",
     "",
     "用法：npm run --silent agent -- <command> [flags]",
     "",
@@ -22,7 +22,7 @@ function printHelp(): void {
     ),
     "",
     "约定：stdout 只输出 JSON（可直接管道给 jq）；日志一律走 stderr。",
-    "身份来源（ADR-0026 / ADR-0036）：--api-key > FATEBOOK_AGENT_API_KEY > FATEBOOK_AGENT_API_KEY_FILE > FATEBOOK_AGENT_USER_EMAIL。",
+    "身份来源（ADR-0026 / ADR-0036）：--api-key > ASSAY_AGENT_API_KEY > ASSAY_AGENT_API_KEY_FILE > ASSAY_AGENT_USER_EMAIL。",
     "没有身份时：`init` 建一个（不需要邮件），用 `whoami` 看当前身份。",
     "",
     "注：不加 --silent 时 npm 会把自己的横幅写进 stdout，破坏上述约定。",

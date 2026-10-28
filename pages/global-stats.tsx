@@ -618,7 +618,7 @@ export default function GlobalStatsPage({
     <div className="px-4 pt-12 lg:pt-16 mx-auto max-w-6xl">
       <NextSeo
         title="Stats"
-        description="Global usage and accuracy trends for nano-fatebook-agent"
+        description="Global usage and accuracy trends for 试金石"
       />
       <div className="mx-auto">
         {stats.map((stat, index) => (

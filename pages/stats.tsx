@@ -16,8 +16,8 @@ export default function StatsPage() {
         {userId && (
           <div className="prose mx-auto mt-14 flex flex-col gap-8">
             <QuickFeedback
-              type="nano-fatebook-agent feedback"
-              placeholder="Give feedback on nano-fatebook-agent..."
+              type="试金石 feedback"
+              placeholder="Give feedback on 试金石..."
               style="textarea"
             />
           </div>

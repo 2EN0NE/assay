@@ -145,7 +145,7 @@ const createQuestionPublicApi = async (req: Request, res: NextApiResponse) => {
     )
     if (missingUsers.length > 0) {
       res.status(400).json({
-        error: `The following users do not have an account on nano-fatebook-agent: ${missingUsers.join(
+        error: `The following users do not have an account on 试金石: ${missingUsers.join(
           ", ",
         )}`,
       })

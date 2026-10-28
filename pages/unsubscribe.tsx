@@ -2,7 +2,7 @@ import clsx from "clsx"
 import { useRouter } from "next/router"
 import { useEffect, useState } from "react"
 import { api, getClientBaseUrl } from "../lib/web/trpc"
-import { webFeedbackUrl } from "../lib/web/utils"
+import { repoIssuesUrl } from "../lib/_constants"
 import { NextSeo } from "next-seo"
 
 export function getUnsubscribeUrl(
@@ -34,8 +34,8 @@ export default function UnsubscribePage() {
       <div className="prose mx-auto">
         <p>
           {isUnsubscribed
-            ? "You have unsubscribed from nano-fatebook-agent emails. Click below to resubscribe."
-            : "Unsubscribe below to stop receiving emails from nano-fatebook-agent."}
+            ? "You have unsubscribed from 试金石 emails. Click below to resubscribe."
+            : "Unsubscribe below to stop receiving emails from 试金石."}
         </p>
         <div className="flex flex-col gap-4">
           <input
@@ -71,7 +71,7 @@ export default function UnsubscribePage() {
                 : "You have been resubscribed to all emails."}
             </h3>
             <p>
-              <a href={webFeedbackUrl}>Want to give us some feedback?</a>
+              <a href={repoIssuesUrl}>Want to give us some feedback?</a>
             </p>
           </>
         )}

@@ -86,11 +86,11 @@ Concretely, making probabilistic predictions has helped me:
 - Understand my relationships better
 - Improve my metacognition, along with related skills
 
-I’m building [nano-fatebook-agent](https://localhost:3000/) to make it as quick and easy as possible for you to harness the power of prediction and reap some of the benefits above, while remaining completely free. The first step to getting value from predictions is to figure out what to make those predictions about, which I’ve had plenty of time to tinker with.
+I’m building [试金石](https://localhost:3000/) to make it as quick and easy as possible for you to harness the power of prediction and reap some of the benefits above, while remaining completely free. The first step to getting value from predictions is to figure out what to make those predictions about, which I’ve had plenty of time to tinker with.
 
 ## **Which questions are worth asking?**
 
-Practice and creativity have allowed me to get more value out of the questions I ask, and the predictions I make. For example, it has helped me communicate with my team better around project timelines, hiring decisions and strategy prioritization. We share predictions with one another using [nano-fatebook-agent for Slack](https://localhost:3000/for-slack) on questions like:
+Practice and creativity have allowed me to get more value out of the questions I ask, and the predictions I make. For example, it has helped me communicate with my team better around project timelines, hiring decisions and strategy prioritization. We share predictions with one another using [试金石 for Slack](https://localhost:3000/for-slack) on questions like:
 
 ![Will Jonny finish writing this blog post by Friday?](/_next/image?url=/blog/concrete-benefits-of-making-predictions/blog_post_by_friday.png&w=3840&q=75)
 
@@ -150,12 +150,12 @@ If I string together some solid running weeks and nail my track sessions then I 
 
 In order to get the maximum benefit from creating predictions, [deliberate practice](https://en.wikipedia.org/wiki/Practice_(learning_method)#Deliberate_practice) is required. I suggest the following steps:
 
-1. Choose a way of recording your predictions. While a simple spreadsheet or notebook can work, I believe [nano-fatebook-agent](https://localhost:3000/) is the best tool available, as it allows you to:
+1. Choose a way of recording your predictions. While a simple spreadsheet or notebook can work, I believe [试金石](https://localhost:3000/) is the best tool available, as it allows you to:
     1. Easily create, tag, share and resolve questions;
     2. Receive email reminders to update or resolve your predictions;
     3. Create teams and tournaments to share your predictions with others;
     4. Build a track record and understand your calibration at-a-glance.
-2. Make some predictions. Think soberly about the probabilities involved, try to imagine what might happen in each of a hundred different worlds, try to notice your own biases and correct for them. If you’re not sure where to start, [nano-fatebook-agent’s Predict Your Year feature](https://localhost:3000/predict-your-year) can offer you a wealth of inspiration.
+2. Make some predictions. Think soberly about the probabilities involved, try to imagine what might happen in each of a hundred different worlds, try to notice your own biases and correct for them. If you’re not sure where to start, [试金石’s Predict Your Year feature](https://localhost:3000/predict-your-year) can offer you a wealth of inspiration.
 3. (Optional) share your predictions with friends, coworkers, or the world at large. This can increase your accountability for reaching your goals, help you communicate with your team how long you think a project will take or elicit relevant information from others that you hadn’t yourself considered.
 4. If necessary, update your predictions. When you do, reflect on what new information has caused the update, and whether there was a way you could have reasonably known this when you made the previous prediction. If so, plan on how to have that information next time.
 5. Resolve the prediction. Again, take time to reflect on what information emerged at resolution time that you hadn’t considered previously, and whether there was a way this could’ve been factored into your predictions.

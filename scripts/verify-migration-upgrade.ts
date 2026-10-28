@@ -49,8 +49,8 @@ const REPO_ROOT = path.resolve(
   "..",
 )
 const MIGRATIONS_DIR = path.join(REPO_ROOT, "prisma", "migrations")
-const VERIFY_DB = "fatebook_migration_verify"
-const VERIFY_URL = `postgresql://fatebook:postgres@localhost:5432/${VERIFY_DB}`
+const VERIFY_DB = "assay_migration_verify"
+const VERIFY_URL = `postgresql://assay:postgres@localhost:5432/${VERIFY_DB}`
 
 /** 本次要验证的五条（升级前 = 目录里排除它们之后的全部）。 */
 const UPGRADE_MIGRATIONS = [
@@ -76,7 +76,7 @@ function sql(query: string): string {
       "db",
       "psql",
       "-U",
-      "fatebook",
+      "assay",
       "-d",
       VERIFY_DB,
       "-tAc",
@@ -96,7 +96,7 @@ function psqlAsAdmin(query: string): string {
       "db",
       "psql",
       "-U",
-      "fatebook",
+      "assay",
       "-d",
       "postgres",
       "-tAc",
@@ -199,7 +199,7 @@ function scenarioUpgradeWithData(preUpgradeDir: string): void {
       "db",
       "psql",
       "-U",
-      "fatebook",
+      "assay",
       "-d",
       VERIFY_DB,
       "-c",
@@ -311,7 +311,7 @@ function scenarioCaseCollision(preUpgradeDir: string): void {
       "db",
       "psql",
       "-U",
-      "fatebook",
+      "assay",
       "-d",
       VERIFY_DB,
       "-c",
@@ -345,7 +345,7 @@ function main(): void {
     throw new Error(`找不到迁移目录：${MIGRATIONS_DIR}`)
   }
   const tmpRoot = fs.mkdtempSync(
-    path.join(os.tmpdir(), "fatebook-migration-verify-"),
+    path.join(os.tmpdir(), "assay-migration-verify-"),
   )
   try {
     const preUpgradeDir = buildPreUpgradeSchemaDir(tmpRoot)

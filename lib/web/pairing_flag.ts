@@ -13,7 +13,7 @@
  * 那等于给一台服务家人的机器开后门。
  */
 
-export const PAIRING_LOGIN_ENV = "FATEBOOK_ENABLE_PAIRING_LOGIN"
+export const PAIRING_LOGIN_ENV = "ASSAY_ENABLE_PAIRING_LOGIN"
 
 export function isPairingLoginEnabled(
   env: Record<string, string | undefined>,

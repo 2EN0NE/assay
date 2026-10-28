@@ -49,7 +49,7 @@ interface MyPredictionsResponse {
 
 export async function importFromPredictionBook(
   predictionBookApiToken: string,
-  fatebookUserId: string,
+  userId: string,
 ) {
   log("Importing from PredictionBook")
 
@@ -79,7 +79,7 @@ export async function importFromPredictionBook(
 
   for (const question of questions) {
     const parts = {
-      id: `${getPredictionBookIdPrefix()}_${fatebookUserId}_${question.id}`,
+      id: `${getPredictionBookIdPrefix()}_${userId}_${question.id}`,
       title: question.description_with_group, // Prediction group is prepended to the prediction title, if it exists
       createdAt: new Date(question.created_at),
       resolved: question.outcome !== null,
@@ -115,7 +115,7 @@ export async function importFromPredictionBook(
         ...parts,
         user: {
           connect: {
-            id: fatebookUserId,
+            id: userId,
           },
         },
         forecasts: {
@@ -127,7 +127,7 @@ export async function importFromPredictionBook(
               .map((response) => ({
                 forecast: response.confidence! / 100,
                 createdAt: new Date(response.created_at),
-                userId: fatebookUserId, // todo check if other people' predictions on my questions show up here
+                userId, // todo check if other people' predictions on my questions show up here
               })),
           },
         },
@@ -138,7 +138,7 @@ export async function importFromPredictionBook(
               .map((response) => ({
                 comment: response.comment!,
                 createdAt: new Date(response.created_at),
-                userId: fatebookUserId, // todo check if other people' predictions on my questions show up here
+                userId, // todo check if other people' predictions on my questions show up here
               })),
           },
         },

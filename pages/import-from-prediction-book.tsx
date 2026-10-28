@@ -8,7 +8,7 @@ import { Questions } from "../components/Questions"
 import { api } from "../lib/web/trpc"
 import {
   getPredictionBookIdPrefix,
-  signInToFatebook,
+  signInToAssay,
   useUserId,
 } from "../lib/web/utils"
 
@@ -19,15 +19,13 @@ export default function ImportPage() {
     <div className="px-4 pt-12 lg:pt-16 mx-auto max-w-6xl">
       <NextSeo title="Import from PredictionBook" />
       <div className="prose mx-auto">
-        <h4>
-          Import all your PredictionBook predictions to nano-fatebook-agent
-        </h4>
+        <h4>Import all your PredictionBook predictions to 试金石</h4>
         {userId ? (
           <PredictionBookImport />
         ) : (
           <button
             className="button primary mx-auto"
-            onClick={() => void signInToFatebook()}
+            onClick={() => void signInToAssay()}
           >
             Sign in or sign up to import your predictions from PredictionBook
           </button>
@@ -83,7 +81,7 @@ function PredictionBookImport() {
     <>
       <NextSeo
         title="Import from PredictionBook"
-        description="Import all of your historical predictions from PredictionBook into nano-fatebook-agent"
+        description="Import all of your historical predictions from PredictionBook into 试金石"
       />
       <form onSubmit={void handleSubmit(onSubmit)}>
         <div className="flex flex-col gap-2">

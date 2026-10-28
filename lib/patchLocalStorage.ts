@@ -9,14 +9,14 @@
   This alone would not be such a problem, except the session object changes every time a page loads,
   as it has the session expiry stored client-side.
 
-  As we load (at the time of writing) 3 fatebook iframes per page, this turns out to be quite a number
+  As we load (at the time of writing) 3 assay iframes per page, this turns out to be quite a number
   of calls to the backend to fetch the session. If we have 10 tabs open, then every time we change tab we launch 30 calls to re-fetch the session.
 
   This code disables both the sending and receiving of session events for embedded iframes,
-  such that they neither call the backend when a fatebook page loads, nor cause open fatebook tabs to.
+  such that they neither call the backend when an assay page loads, nor cause open assay tabs to.
 
   Note there is also an option to disable "refetchOnWindowFocus" on the Session component in _app.tsx that we have
-  left enabled. This means whenever a tab is opened or returned to, there will be a session call for each fatebook
+  left enabled. This means whenever a tab is opened or returned to, there will be a session call for each assay
   iframe on the page.
 
   Unfortunately, disabling this stops session update from changing the page within the embed frames,

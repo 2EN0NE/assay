@@ -15,10 +15,10 @@ import { FormProvider, SubmitHandler } from "react-hook-form"
 import { mergeRefs } from "react-merge-refs"
 import TextareaAutosize from "react-textarea-autosize"
 import SuperJSON from "trpc-transformer"
-import { fatebookUrl } from "../../lib/_constants"
+import { appUrl } from "../../lib/_constants"
 import { getDateYYYYMMDD, tomorrowDate } from "../../lib/_utils_common"
 import { api } from "../../lib/web/trpc"
-import { signInToFatebook, utcDateStrToLocalDate } from "../../lib/web/utils"
+import { signInToAssay, utcDateStrToLocalDate } from "../../lib/web/utils"
 import { TagsSelect } from "../questions/TagsSelect"
 import { PredictFormType, usePredictForm } from "./PredictProvider"
 import QuestionSuggestions from "./QuestionSuggestions"
@@ -130,9 +130,9 @@ export function Predict({
         )
         if (embedded) {
           // pi-lens-ignore: no-open-redirect
-          window.open(fatebookUrl, "_blank")?.focus()
+          window.open(appUrl, "_blank")?.focus()
         } else {
-          void signInToFatebook()
+          void signInToAssay()
         }
         return
       }

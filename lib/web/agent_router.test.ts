@@ -12,7 +12,7 @@ jest.mock("./notifications", () => ({
   sendBatchedEmails: jest.fn(),
   sendEmailWithTemplateUnbatched: jest.fn(),
   sendEmailUnbatched: jest.fn(),
-  fatebookEmailFooter: jest.fn(),
+  assayEmailFooter: jest.fn(),
 }))
 
 jest.mock("./question_url", () => ({
@@ -157,7 +157,7 @@ const asWebSession = () =>
     authentication: "session",
   } as CallerInput)
 
-/** 只设了 `FATEBOOK_AGENT_USER_EMAIL`：证明得了身份，证明不了「持有」。 */
+/** 只设了 `ASSAY_AGENT_USER_EMAIL`：证明得了身份，证明不了「持有」。 */
 const asIdentitySelector = () =>
   agentRouter.createCaller({
     userId: "user-1",
@@ -1068,7 +1068,7 @@ describe("agent.issuePairingCode —— 开关在过程层也判（ADR-0035）",
    *
    * 没有它们时，开关一开，任何已登录的网页会话都能经 `/api/trpc` 给自己签一枚码——
    * 那扇门就能把自己续成新的 token，而 ADR-0023 登记表里的理由（"网页会话签发不了"）
-   * 会是一句假话。`FATEBOOK_AGENT_USER_EMAIL` 同理：它不含秘密。
+   * 会是一句假话。`ASSAY_AGENT_USER_EMAIL` 同理：它不含秘密。
    */
   it("开关打开，但调用方是**网页会话** ⇒ FORBIDDEN，不落库", async () => {
     process.env[ENV] = "1"

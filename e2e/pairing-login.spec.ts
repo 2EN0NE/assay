@@ -31,12 +31,12 @@ async function runCli(
         ...process.env,
         // 挡住 `.env` 里可能存在的钥匙与凭据文件：这次用例的身份只能是下面这一把
         // （dotenv 不覆盖已存在的键，空串因此是"显式压制"）。
-        FATEBOOK_AGENT_API_KEY: "",
-        FATEBOOK_AGENT_API_KEY_FILE: "",
-        FATEBOOK_AGENT_USER_EMAIL: "",
+        ASSAY_AGENT_API_KEY: "",
+        ASSAY_AGENT_API_KEY_FILE: "",
+        ASSAY_AGENT_USER_EMAIL: "",
         // CLI 侧的开关判定与 Web 侧共用一份定义；这里显式打开。
         // Web 服务端的开关由 `npm run dev:e2e` 提供（默认关闭是 ADR-0035 的决定）。
-        FATEBOOK_ENABLE_PAIRING_LOGIN: "1",
+        ASSAY_ENABLE_PAIRING_LOGIN: "1",
         ...env,
       },
       maxBuffer: 10 * 1024 * 1024,
@@ -59,7 +59,7 @@ test("配对码：CLI 签发 → 本机浏览器兑换 → 该身份拿到会话
   // 2) 持有凭据的一方签发一次性的码
   const issued = JSON.parse(
     await runCli(["issue-pairing-code"], {
-      FATEBOOK_AGENT_API_KEY: created.apiKey,
+      ASSAY_AGENT_API_KEY: created.apiKey,
     }),
   ) as { code: string; expiresAt: string; redeemUrl: string }
   expect(issued.code).toMatch(/^[2-9A-HJ-NP-Z]{8}$/)
