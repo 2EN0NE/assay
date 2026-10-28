@@ -1,794 +1,78 @@
-# AGENTS.md - Fatebook Development Guide
+# AGENTS.md — 试金石 开发指南
 
-This file provides context for AI agents operating in the Fatebook codebase.
+本文件只写本仓库特有的约定与硬约束；通用编码原则不在此重复。
 
-## Core Principles
+## 核心原则
 
-### 1. Clarify Requirements Before Acting
+### 1. 动手前先澄清
 
-- Ask clarifying questions when uncertain, confirm with user
-- **Important**: Don't dive into details immediately; explore from decisive high-level to details
-- Ask "what to do" first, then "how to do"
+- 不确定就问；先问"做什么"，再问"怎么做"，不要一上来钻进细节。
 
-### 2. TDD Approach - Test First
+### 2. 测试先行
 
-- Design test cases before writing code
-- Before starting work, check if corresponding test cases exist
-- If no test cases exist, design them and confirm with user
-- Run test regression after completing code
+- 写代码前先设计测试用例；没有就设计好并与用户确认，完成后跑测试回归。
 
-### 3. Experience Accumulation
+### 3. 经验沉淀
 
-- Summarize and collect effective experiences during work
-- Document cases in `knowledge/` directory for accumulation
-- Prefer categorization and consolidation over excessive unrelated content
-- Important experiences can also sync to AGENTS.md
+- 把可复用的排查经验记到 `knowledge/`；优先归类合并，重要经验同步进本文件。
 
-### 4. Documentation Language Convention
+### 4. 文档语言约定
 
-- **Authoritative documents** (like AGENTS.md) keep single language only
-- **Explanatory documents** (like README.md) may have bilingual versions — **this repo's `README.md` is Chinese-only** (the `README.zh-CN.md` mirror was deleted)
-- AI agent working language: follow user preference
+- **权威文档**（如 AGENTS.md）只用单一语言
+- **说明性文档**（如 README.md）可有双语版本——**本仓库的 `README.md` 只用中文**（`README.zh-CN.md` 镜像已删除）
+- AI agent 的工作语言：跟随用户偏好
 
-### 5. Task Tracking with todo.md
+### 5. 用 todo.md 跟踪任务
 
-- Before starting any task, create a `todo.md` file in the project root
-- Break down the task into atomic subtasks
-- Check off each subtask as it is completed with `[x]`
-- After all tasks are complete, append git commit message suggestions at the end of `todo.md`
-- Delete the `todo.md` file after committing (or keep for reference if needed)
+- 开工前在根目录建 `todo.md` 拆子任务，完成一项勾一项；全部完成后可删除。**它是本机工作记录，已 gitignore，不进版本历史。**
 
-```markdown
-# Todo List
+### 6. 用 progress.txt 记录进度
 
-## Task: [Task Description]
+- 每轮会话结束把已完成、关键决策、教训与下一步写进 `progress.txt`；每次迭代都写，新上下文开始时先读。**同 `todo.md`：本机工作记录，已 gitignore，不进版本历史。**
 
-- [ ] Subtask 1
-- [ ] Subtask 2
-- [ ] Subtask 3
+### 7. 战略规划参考
+
+- 工程知识存放在 `knowledge/` 目录
+- 战略规划文档是 `docs/roadmap.md`——回答"接下来该做什么？"（基于当前目标与状态）
+- 项目根目录的 **todo.md**：本次会话的战术任务拆解
+- **docs/roadmap.md**：战略阶段的规划与取舍
+
+当被问到"基于当前战略规划，接下来该做什么？"时，查阅 `docs/roadmap.md`，给出可执行的选项并说明理由。
 
 ---
 
-## Git Commit Message Suggestions
+### 8. 交互面对等（CLI ⟷ Web）
 
-// ... commit message suggestions here ...
-```
+CLI 与 Web UI 是**一套能力之上的两个交互面——不是两个产品**。本项目定义的每一项能力（决策、预测、清单与叙事、结算、触达），**只要一面有，另一面就必须有**。差异只允许存在于*形式与习惯*：CLI 服务 agent 与脚本（确定性 JSON、一条命令），Web 服务人（并排、颜色、可点击）。形式的差异不是能力的差异。
 
-### 6. Progress Tracking with progress.txt
+- **范围**：本项目自身的功能面。从上游 fatebook 继承的能力（Slack、Discord、Chrome 扩展、锦标赛、博客）**不在**此列——按 ADR-0013，它们大多已在 MVP 之外。
+- **对等单元**：一个 tRPC procedure。只能在单面触达的 procedure 必须登记为**有意例外**，并**写明理由**。
+- **有意例外**要列出来，绝不静默容忍。第一个是*登录*：Web 用邮箱/OAuth 登录，CLI 用凭据——能力（"证明我是谁并取得凭据"）相同，形式无法相同。当前清单：[ADR-0023](docs/adr/0023-interaction-surface-parity.md)。
+- **强制手段**：`cli/parity.test.ts` 是门禁。它**从源码**读取每一面的可达性——CLI 面读 `cli/commands.ts`，Web 面读 `pages/` 与 `components/` 下的 `api.<router>.<name>` 引用——再把 `agent`、`decision`、`tags` 三个路由的每个 procedure 与例外清单比对：只能在单面触达、又没有登记理由的 procedure，会被失败的测试点名。过期的例外（另一面已经追上）同样会变红，促使删除该行。
 
-- Create `progress.txt` in project root to prevent context rot
-- Record completed work state and lessons learned after each session
-- **Write to file on each iteration**, read at start of new context
-- Format: timestamp, completed tasks, key decisions, lessons learned, next steps
+  代价是例外清单**维护在测试文件里**（每条都必须带理由，抄自 ADR-0023 的"当前例外清单"）：新增 procedure 却没决定它在另一面落在哪里，门禁就会失败。这是刻意的——"静默缺失"正是这条规则要防的东西。
 
-```markdown
-# Progress Record
+理由、被否决的方案与当前例外清单：[ADR-0023](docs/adr/0023-interaction-surface-parity.md)。
 
-## Session: [Date/Time]
+#### 一个后端，三种暴露面
 
-### Completed
+业务行为**只有一份实现**：`lib/web/` 里的 tRPC procedures。交互面只是这些 procedure 之上的适配器，绝不是第二套规则实现。
 
-- [Task 1]
-- [Task 2]
+| 暴露面                     | 位置                    | 如何到达后端                                                                                                             |
+| -------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| CLI（agent、脚本）         | `cli/`                  | **进程内**调用 `appRouter`；为*业务*操作直接碰 `prisma` 是被禁止的（身份查询、连接关闭与预检计数属于基础设施，不是业务） |
+| Web（人）                  | `pages/`、`components/` | 经 tRPC 调用同一批 procedure                                                                                             |
+| Agent 技能（任意 harness） | `skills/`               | CLI 命令面的**投影**——只有说明与示例，绝无自己的行为                                                                     |
 
-### Key Decisions
+因此新增能力的顺序是固定的：**procedure → CLI 命令 → 技能条目 → Web 入口**。最后一项只在该能力面向用户时才需要；`cli/parity.test.ts` 的对等门禁会判定这一点，两面都安置好之前，新能力不算完成。
 
-- Decision: [What was decided]
-- Rationale: [Why]
+**用哪个基元：`ownedProcedure` 还是 `credentialProcedure`**（ADR-0035）。每个 procedure 都继承三种"凭什么"之一——`ctx.authentication` 为 `session`（HTTP 路径，永远如此）、`credential`（真 API key，来自 `--api-key` / 环境变量 / 钥匙文件）或 `identity-selector`（`ASSAY_AGENT_USER_EMAIL`，它**不是**秘密：机器上谁设了它，谁就是该身份）。`ownedProcedure` 三者都接受；`credentialProcedure` 只接受 `credential`。只有**凭据持有者本人**才能做的事——今天就是签发配对码——必须用 `credentialProcedure`；否则网页会话可以自己通过 `/api/trpc` 做，ADR 那句话就成了一句注释。映射写在构造处（`lib/web/context.ts`、`cli/context.ts`），并由 `cli/context.test.ts` 断言。
 
-### Lessons Learned
+**Harness 中立。** 技能必须能在任何遵循 [Agent Skills 规范](https://agentskills.io/specification) 的运行时加载——技能正文里不得出现 pi 专属路径或参数；技能必须**显式**声明录入来源，而不是依赖调用方环境（环境标记只提供默认值；见 ADR-0024）。非 pi 的 agent 必须记下 pi agent 会记的内容。
 
-- [Lesson 1]
-- [Lesson 2]
+**交付物形态。** 每一项面向 agent 的能力都要带一条可执行的验收路径：说什么、跑什么、观察到什么。"应该能用"不算验收——第一个例子见 `docs/uat-pi-agent.md`。
 
-### Next Steps
-
-- [Next task]
-```
-
-### 7. Strategic Planning Reference
-
-- Engineering knowledge is stored in `knowledge/` directory
-- Strategic planning document is in `knowledge/planning.md` - answers "what should we do next?" based on project goals and current state
-- **todo.md** in project root: tactical task breakdown for current session
-- **knowledge/planning.md**: strategic phase planning for project direction
-
-When asked "what should we do next based on current strategic planning?", consult the planning document and provide actionable options with reasoning.
-
-### 8. Docker Sandbox Isolation (Running OpenCode)
-
-Running OpenCode inside a Docker container is a critical security measure. It prevents AI from accidentally deleting host files or executing dangerous commands during automated iterations.
-
-#### Why This Matters
-
-- **Host Protection**: Isolates AI operations from the host filesystem
-- **Damage Control**: Even if AI goes rogue, it only affects the container
-- **Clean Environment**: Each task starts with a fresh, predictable environment
-
-#### Docker Configuration
-
-Create `docker-compose.yml` in project root:
-
-```yaml
-services:
-  opencode-sandbox:
-    image: node:18-bullseye
-    volumes:
-      - .:/workspace
-    working_dir: /workspace
-    user: node
-    command: tail -f /dev/null
-```
-
-#### Security Best Practices
-
-| Setting   | Recommendation                  | Purpose                     |
-| --------- | ------------------------------- | --------------------------- |
-| User      | Run as non-root (`user: node`)  | Limit container privileges  |
-| Read-only | Use `:ro` for sensitive dirs    | Prevent accidental writes   |
-| Network   | `network_mode: none` if offline | Prevent data exfiltration   |
-| Resources | `--memory=2g --cpus=1.5`        | Prevent resource exhaustion |
-
-#### Verification
-
-```bash
-# Confirm running inside container
-ls /.dockerenv
-
-# Check current user
-whoami
-```
-
-#### Alternative: OrbStack
-
-If using OrbStack (macOS), configure Docker sandbox through its settings for easier management.
-
----
-
-### 9. Parallel Development with Worktrees
-
-Single-threaded AI coding cannot meet demands for parallel feature development. Use Git worktrees to create isolated "containers within containers" - each worktree runs a dedicated OpenCode instance for independent, parallel development.
-
-#### Core Principles
-
-- **Isolated Execution**: Each worktree operates independently with its own branch, port, and database
-- **Parallel Progress**: Multiple features can be developed simultaneously without interference
-- **Sequential Integration**: Features merge one-by-one to main after passing tests and rebasing
-
-#### Worktree Setup for Parallel Development
-
-```bash
-# Create worktree with dedicated branch
-git worktree add -b task/xxx ../fatebook-worktrees/task-xxx
-
-# Create isolated data directory
-mkdir -p ../fatebook-worktrees/task-xxx/data
-
-# Symlink shared configuration (NOT progress.txt - each worktree has its own)
-ln -s ../../fatebook/data/dev-tasks.json ../fatebook-worktrees/task-xxx/data/
-ln -s ../../fatebook/api-key.json ../fatebook-worktrees/task-xxx/data/
-
-# Symlink node_modules for faster startup
-ln -s ../fatebook/node_modules ../fatebook-worktrees/task-xxx/
-
-# Dedicated port: base 3005 + task_index
-# task-001 → 3005, task-002 → 3006, etc.
-```
-
-#### Conflict Resolution Principles
-
-When multiple worktrees modify the same files, conflicts are inevitable. Follow these principles:
-
-##### Rebase Failure Handling
-
-```
-If "unstaged changes" error:
-  → Commit or stash current changes first
-
-If merge conflicts:
-  1. View conflicting files: git status
-  2. Read conflict markers to understand both sides' intent
-  3. Manually resolve (keep correct code, reject incompatible changes)
-  4. git add <resolved-files>
-  5. git rebase --continue
-  6. Repeat until rebase completes
-```
-
-##### Test Failure Handling
-
-```
-When tests fail:
-  1. Run: npm test
-  2. Analyze error messages - identify root cause
-  3. Fix the bug in your code
-  4. Re-run tests until all pass
-  5. Commit fix: git commit -m "fix: ..."
-```
-
-**Critical Rule**: Never give up. When rebase or tests fail, you MUST resolve before proceeding. Do not mark task as failed to bypass issues.
-
-##### Conflict Prevention Strategies
-
-- **Assign clear file ownership**: Different worktrees should modify different modules when possible
-- **Coordinate before starting**: Check dev-tasks.json to understand what others are working on
-- **Communicate intent**: If you must modify shared files (e.g., AGENTS.md, shared types), coordinate with other agents
-
-##### Worktree Cleanup Best Practices
-
-> **Note**: The `worktree-cleanup` skill is now installed globally. Use it for automated cleanup.
-
-- **Clean up immediately** after task completion to avoid stale worktrees
-- **Never leave uncommitted changes** in worktrees - always commit before cleanup
-- **Use `--force` when needed** - safe if all changes were committed
-- **Verify with `git worktree list`** - confirm only main worktree remains
-- **If session crashes** - manually clean up in next session using the commands above
-
----
-
-### 10. Interaction-Surface Parity (CLI ⟷ Web)
-
-The CLI and the Web UI are **two interaction surfaces over one set of capabilities — not two products**. For every capability this project defines (Decision, Prediction, rubric and narrative, settlement, delivery), **if one surface has it, the other must have it**. Differences are allowed in _form and habit_ only: the CLI serves agents and scripts (deterministic JSON, one command), the Web serves humans (side-by-side, colour, clickable). A difference in form is not a difference in capability.
-
-- **Scope**: this project's own feature surface. Capabilities inherited from upstream fatebook (Slack, Discord, the Chrome extension, tournaments, blog) are **not** covered — most are already outside the MVP per ADR-0013.
-- **Unit of parity**: a tRPC procedure. A procedure reachable on only one surface must be registered as a deliberate exception, **with a reason**.
-- **Deliberate exceptions** are listed, never silently tolerated. The first is _sign-in_: the Web signs in by email/OAuth, the CLI by credential — the capability ("prove who I am and obtain a credential") is identical, the form cannot be. Current list: [ADR-0023](docs/adr/0023-interaction-surface-parity.md).
-- **Enforcement**: `cli/parity.test.ts` is the gate. It reads each surface's reachability **from source** — the CLI surface from `cli/commands.ts`, the Web surface from `api.<router>.<name>` references under `pages/` and `components/` — then compares every procedure of the `agent`, `decision` and `tags` routers against the exception list: a procedure reachable on only one surface, with no registered reason, is named by the failing test. A stale exception (the other surface has since caught up) turns it red too, prompting the row's removal.
-
-  The price is that the exception list is **maintained inside the test file** (every entry must carry a reason, copied from ADR-0023's "current exception list"): adding a procedure without deciding where it lands on the other surface fails the gate. That is deliberate — a "silent absence" is exactly what this rule exists to prevent.
-
-Rationale, rejected alternatives and the current exception list: [ADR-0023](docs/adr/0023-interaction-surface-parity.md).
-
-#### One backend, three exposures
-
-Business behaviour has **exactly one implementation**: the tRPC procedures in `lib/web/`. A surface is an adapter over those procedures, never a second implementation of the rules.
-
-| Exposure                  | Where                   | How it reaches the backend                                                                                                                                                                |
-| ------------------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| CLI (agents, scripts)     | `cli/`                  | calls `appRouter` **in-process**; touching `prisma` for a _business_ operation is forbidden (identity lookup, connection teardown and pre-flight counts are infrastructure, not business) |
-| Web (humans)              | `pages/`, `components/` | calls the same procedures over tRPC                                                                                                                                                       |
-| Agent skill (any harness) | `skills/`               | a **projection of the CLI command surface** — instructions and examples only, never behaviour of its own                                                                                  |
-
-Adding a capability therefore has a fixed order: **procedure → CLI command → skill entry → Web entry**. The last one matters only when the capability is user-facing; the parity gate in `cli/parity.test.ts` decides that, and a new capability is not done until both surfaces are settled.
-
-**Which primitive: `ownedProcedure` or `credentialProcedure`** (ADR-0035). Every procedure inherits one of three declared answers to "凭什么" — `ctx.authentication` is `session` (the HTTP path, always), `credential` (a real API key, from `--api-key` / env / key file) or `identity-selector` (`FATEBOOK_AGENT_USER_EMAIL`, which is **not** a secret: anyone on the box who sets it is that identity). `ownedProcedure` accepts all three; `credentialProcedure` accepts only `credential`. Anything a **credential holder alone** may do — issuing a pairing code today — uses `credentialProcedure`, otherwise a web session can do it for itself via `/api/trpc` and the ADR sentence becomes a comment. The mapping lives at the construction sites (`lib/web/context.ts`, `cli/context.ts`) and is asserted in `cli/context.test.ts`.
-
-**Harness neutrality.** A skill must load in any runtime that follows the [Agent Skills specification](https://agentskills.io/specification) — no pi-specific paths or flags may appear in the skill body, and the skill must state provenance **explicitly** instead of relying on the caller's environment (environment markers only supply a default; see ADR-0024). A non-pi agent must record what a pi agent would record.
-
-**Deliverable shape.** Every agent-facing capability ships with an executable acceptance path: what to say, what to run, what to observe. "It should work" is not acceptance — see `docs/uat-pi-agent.md` for the first one.
-
-**No harness-specific artefacts.** This project ships three exposures: the CLI, the Web UI, and Agent Skills. Anything that works only inside one agent runtime — a pi extension, a Claude hook, a cron job, a long-running pusher — is out of scope, however convenient it would be: it re-binds "does this work" to that runtime, which is the thing the skill format exists to avoid. Reminders and tracking are therefore **pull-based**: `AGENTS.md` tells the agent to pull the due queue at the start of a session, and the skill states when to pull. Never a background process.
-
----
-
-## Task Lifecycle (Automated)
-
-This section describes the automated task lifecycle for AI agents. When properly configured, the agent can automatically pick up tasks, implement them in isolated workspaces, commit changes, and merge to main.
-
-### Task Data Structure (`data/dev-tasks.json`)
-
-Create `data/dev-tasks.json` in project root to manage tasks:
-
-```json
-[
-  {
-    "id": "task-001",
-    "title": "Add user profile feature",
-    "description": "Implement user profile page with avatar upload",
-    "status": "pending",
-    "priority": "high",
-    "assignee": "agent",
-    "createdAt": "2026-02-01T00:00:00Z"
-  }
-]
-```
-
-### Workflow Steps
-
-#### Step 1: Pick Up Task
-
-Atomic operation - read from `data/dev-tasks.json` and select a task with `status: "pending"`. Mark it as `in_progress` before starting.
-
-#### Step 2: Create Isolated Workspace
-
-Follow the worktree setup instructions in **Section 8: Parallel Development with Worktrees** above. Each task gets its own isolated Git worktree with dedicated branch and port.
-
-#### Step 3: Implement Feature
-
-In the isolated worktree:
-
-- Create `todo.md` for task breakdown
-- Implement the feature following TDD approach
-- Run tests locally before proceeding
-
-#### Step 4: Commit Changes
-
-```bash
-git add .
-git commit -m "<type>(<scope>): <subject>"
-```
-
-Follow [Conventional Commits](#git-commit-guidelines) format.
-
-#### Step 5: Merge + Test
-
-```bash
-# Fetch and merge latest main
-git fetch origin
-git merge origin/main
-
-# Run tests
-npm test
-
-# If any step fails, rollback to Step 3 and fix
-```
-
-#### Step 6: Auto-Merge to Main
-
-```bash
-# Rebase onto main
-git fetch origin main
-git rebase origin/main
-
-# If rebase fails: resolve conflicts, then continue
-# If rebase succeeds: merge to main
-git merge main task-xxx
-git push origin main
-
-# If any step fails: rollback to Step 5
-```
-
-#### Step 7: Mark Complete
-
-**CRITICAL**: Update `data/dev-tasks.json` to mark task as `completed` BEFORE cleanup. This prevents task status loss if process is killed.
-
-```json
-{
-  "id": "task-xxx",
-  "status": "completed",
-  "completedAt": "2026-02-19T00:00:00Z"
-}
-```
-
-#### Step 8: Cleanup
-
-```bash
-# Check for uncommitted changes first
-git status
-
-# If there are uncommitted changes, either commit or force remove
-git worktree remove --force ../fatebook-worktrees/task-xxx
-
-# Remove local branch
-git branch -D task/xxx
-
-# Delete remote task branch
-git push origin --delete task/xxx
-```
-
-> **Tip**: Use the `worktree-cleanup` skill for automated cleanup (installed globally).
-
-**Manual Cleanup Commands (backup):**
-
-```bash
-# Check for uncommitted changes first
-git status
-
-# If there are uncommitted changes, either commit or force remove
-git worktree remove --force ../fatebook-worktrees/task-xxx
-
-# Remove local branch
-git branch -D task/xxx
-
-# Delete remote task branch
-git push origin --delete task/xxx
-```
-
-**Important Cleanup Notes:**
-
-- **Always cleanup after task completion** - Stale worktrees cause confusion and potential conflicts
-- **Use `--force` if needed** - If worktree has untracked files, force remove is safe since changes were committed
-- **Verify cleanup** - Run `git worktree list` to confirm only main worktree remains
-- **Session interrupted?** - If OpenCode session ends unexpectedly, manually cleanup in next session
-
-#### Step 9: Experience Accumulation (Optional)
-
-Record lessons learned in `progress.txt`:
-
-```markdown
-## Session: [Date/Time]
-
-### Completed
-
-- [Task description]
-
-### Key Decisions
-
-- Decision: [What was decided]
-- Rationale: [Why]
-
-### Lessons Learned
-
-- [Lesson 1]
-```
-
-This step is optional - if the process is killed, task status in `dev-tasks.json` is preserved.
-
----
-
-## Knowledge Management
-
-Engineering knowledge documents are stored in `knowledge/` directory for future reference and reuse.
-
-### Directory Structure
-
-```
-knowledge/
-├── patterns/          # Reusable code patterns and solutions
-├── decisions/         # Architecture and design decisions (ADRs)
-├── planning.md        # Strategic phase planning document
-├── troubleshooting/   # Common issues and resolutions
-└── guides/            # How-to guides and tutorials
-```
-
-### Document Guidelines
-
-- Each document should focus on a specific topic
-- Include context: why this approach was chosen, trade-offs considered
-- Reference related code files when possible
-- Update documents when patterns change
-
-### Experience Accumulation
-
-During each work session:
-
-- Summarize and collect effective experiences promptly
-- Document cases in `knowledge/` directory for accumulation
-- Prefer categorization and consolidation over excessive content
-- Important experiences can also sync to AGENTS.md
-
----
-
-## Project Overview
-
-Fatebook (fatebook.io) is a prediction tracking platform with Slack/Discord integrations and a Chrome extension. Built with Next.js, tRPC, Prisma, and Tailwind CSS.
-
-## Tech Stack
-
-- **Framework**: Next.js 14 (Pages Router)
-- **API**: tRPC + Zod validation
-- **Database**: PostgreSQL + Prisma ORM
-- **Styling**: Tailwind CSS + DaisyUI
-- **Testing**: Jest + React Testing Library
-- **Auth**: NextAuth.js (Google OAuth)
-- **Integrations**: Slack API, Discord API
-
----
-
-## Commands
-
-### Development
-
-```bash
-npm run dev          # Start dev server on https://localhost:3005
-npm run build        # Production build
-npm run start        # Start production server
-npm run studio       # Open Prisma Studio
-```
-
-### Linting & Formatting
-
-```bash
-npm run lint         # ESLint on lib/, pages/, components/
-npm run format       # Prettier write all files
-```
-
-### Testing
-
-```bash
-npm run test                           # Run all tests
-npm run test -- --coverage             # Run with coverage report
-npm run test -- path/to/test.tsx      # Run single test file
-npm run test -- --testPathPattern=foo  # Run tests matching pattern
-```
-
----
-
-## Code Style Guidelines
-
-### TypeScript
-
-- **Strict mode enabled** - No `any` types, no `@ts-ignore`
-- **Strict null checks enabled** - Always handle null/undefined
-- **Always await async functions** - `require-await` rule enforced
-
-### Naming Conventions
-
-| Element          | Format                          | Example                      |
-| ---------------- | ------------------------------- | ---------------------------- |
-| Variables        | camelCase                       | `userId`, `isActive`         |
-| Constants        | UPPER_CASE                      | `MAX_RETRY_COUNT`            |
-| Functions        | camelCase                       | `getUserById()`              |
-| React Components | PascalCase                      | `Navbar.tsx`, `QuestionCard` |
-| Interfaces       | PascalCase                      | `UserProfile`, `Question`    |
-| Types            | PascalCase                      | `ForecastResult`             |
-| Enums            | PascalCase (members UPPER_CASE) | `QuestionStatus`             |
-| Type Parameters  | PascalCase                      | `T extends string`           |
-
-### Imports
-
-- **Order**: External libs → Internal libs → Components/UI → Styles
-- **Use path aliases**: Avoid relative paths crossing directories
-- **React imports**: Use `import { useState } from "react"` (not default)
-
-```typescript
-// Good
-import { useState } from "react"
-import { api } from "../lib/web/trpc"
-import clsx from "clsx"
-import Navbar from "../components/Navbar"
-
-// Avoid
-import React, { useState } from "react" // React not needed in React 18+
-import { useState } from "../../../lib/utils" // Deep relative paths
-```
-
-### Error Handling
-
-- **Never suppress errors** - No `as any`, `@ts-ignore`, `@ts-expect-error`
-- **Handle promises properly** - Use `await` or `.catch()`, never float promises
-- **Use Zod for validation** - All API inputs validated with Zod schemas
-
-```typescript
-// Good
-const user = await getUser(id)
-if (!user) throw new Error("User not found")
-
-// Bad
-const user = getUser(id) // Floating promise
-const result = data as any // Type suppression
-```
-
-### Component Patterns
-
-- Use **functional components** with hooks
-- **Export named components**: `export function Navbar() {...}`
-- **Co-locate tests**: `QuestionCard.test.tsx` next to `QuestionCard.tsx`
-- **Co-locate types**: Define types in same file or `lib/types.ts`
-
-### Tailwind CSS
-
-- Use **DaisyUI components** when available (buttons, modals, dropdowns)
-- Use semantic class names with DaisyUI tokens:
-  - `btn btn-primary`, `btn btn-sm`
-  - `modal`, `dropdown`, `card`
-- Use `clsx` or `cva` for conditional classes
-
-```tsx
-<button className={clsx("btn btn-primary", isLoading && "loading")}>
-  Submit
-</button>
-```
-
----
-
-## Project Structure
-
-```
-fatebook/
-├── components/          # React components
-│   └── ui/             # Reusable UI components
-├── lib/
-│   ├── web/            # tRPC routers and web utilities
-│   ├── blocks-designs/ # Slack block kit designs
-│   └── interactive_handlers/  # Slack interaction handlers
-├── pages/              # Next.js pages (API routes + pages)
-│   ├── api/            # API endpoints
-│   └── *.tsx          # Page routes
-├── chrome-extension/   # Chrome extension source
-└── prisma/            # Database schema
-```
-
----
-
-## Database
-
-- **Prisma** for ORM - schema in `prisma/schema.prisma`
-- Run `npx prisma generate` after schema changes
-- Use `npx prisma studio` to explore data
-
----
-
-## Testing Guidelines
-
-- Tests go in `*.test.tsx` or `*.test.ts` files
-- Import `@testing-library/jest-dom` for custom matchers
-- Use `jest.useFakeTimers()` for time-dependent tests
-- **Never put a test file under `pages/`**: Next.js turns every `.ts`/`.tsx` file there into a
-  route, `*.test.ts` included — `next build` will happily emit `/api/<name>.test` as an
-  endpoint that tries to load jest modules in production. A test for a page or API route
-  belongs in the domain module it guards (e.g. `lib/web/`) and imports the handler from
-  `pages/`.
-
-### 单元 vs e2e 的分工
-
-| 层          | 位置                               | 该放什么                                                                                                                 |
-| ----------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| 单元 / 组件 | `**/*.test.ts(x)`（不能放 pages/） | 纯逻辑密集点：计分、状态机、修订判定、CLI 参数与身份分发、清单版本。数据库一律用 `jest.mock` 假客户端，不连真库。        |
-| 集成        | e2e 里的真库用例                   | 数据库级行为：`onDelete: SetNull`、CHECK 约束、迁移后果。只有真库能验，不要用单测假装覆盖了它。                          |
-| 端到端      | `e2e/*.spec.ts`                    | 用户可感知的完整旅程：CLI 写入 → Web 看见 → 人背书/确认；登录 → 建预测 → 结算。断言 stdout/stderr/exit code 与界面文案。 |
-
-**覆盖率只用于守住不减，不用于证明正确**：`jest.config.ts` 的 `coverageThreshold` 只给
-逻辑最密的模块与校准图端点设下限（50–80%，留出余量）。门槛贴着实测值（曾经 49.91% vs 50%）
-会让它在换 Node 版本时自己变色——设阈值时留 5pp 以上。
-
-```typescript
-import "@testing-library/jest-dom"
-import { render, screen } from "@testing-library/react"
-import { MyComponent } from "../MyComponent"
-
-describe("MyComponent", () => {
-  it("renders correctly", () => {
-    render(<MyComponent />)
-    expect(screen.getByText("Hello")).toBeInTheDocument()
-  })
-})
-```
-
----
-
-## VS Code / Debugging
-
-- Use the **"Next.js: debug fatebook full stack"** launch config for debugging
-- Set breakpoints in both frontend and API routes
-- Works in Cursor and VS Code
-
----
-
-## Common Patterns
-
-### tRPC Router
-
-```typescript
-// lib/web/question_router.ts
-import { z } from "zod"
-import { router, protectedProcedure } from "./trpc"
-
-export const questionRouter = router({
-  create: protectedProcedure
-    .input(z.object({ question: z.string(), resolutionDate: z.date() }))
-    .mutation(async ({ input, ctx }) => {
-      return ctx.prisma.question.create({ ... })
-    }),
-})
-```
-
-### React Component with tRPC
-
-```typescript
-import { api } from "../lib/web/trpc"
-
-export function MyComponent() {
-  const questions = api.question.list.useQuery()
-
-  if (questions.isLoading) return <span>Loading...</span>
-
-  return (
-    <ul>
-      {questions.data?.map(q => <li key={q.id}>{q.text}</li>)}
-    </ul>
-  )
-}
-```
-
----
-
-## Git Commit Guidelines
-
-### Commit Message Format
-
-Use [Conventional Commits](https://www.conventionalcommits.org/) standard format:
-
-```
-<type>(<scope>): <subject>
-
-[optional body]
-
-[optional footer]
-```
-
-### Type
-
-| Type       | Description                               |
-| ---------- | ----------------------------------------- |
-| `feat`     | New feature                               |
-| `fix`      | Bug fix                                   |
-| `docs`     | Documentation only                        |
-| `style`    | Code style changes (no functionality)     |
-| `refactor` | Code refactoring (not new feature or fix) |
-| `test`     | Adding or updating tests                  |
-| `chore`    | Build process, tooling changes            |
-
-### Examples
-
-```
-feat(auth): add Google OAuth login support
-fix(api): resolve null pointer in question router
-docs(readme): update installation instructions
-refactor(components): extract shared Button component
-```
-
-### Important
-
-**At the end of each conversation, provide git commit message suggestions for the current work.**
-
-Suggestions should include:
-
-- Commit message in the above format
-- If multiple types of changes, provide multiple commit message suggestions
-
-### Atomic Commits Principle
-
-**Encourage small, atomic commits after each successful fix or implementation step.** This principle helps with:
-
-- **Rollback safety**: Easy to revert specific changes without affecting others
-- **Quality tracking**: Each commit represents a verified, working state
-- **Code review**: Reviewers can focus on one logical change at a time
-- **Debugging**: `git bisect` becomes much more effective
-
-#### What Makes a Commit Atomic
-
-An atomic commit should be:
-
-1. **Focused** - One logical change per commit (e.g., "fix login bug" NOT "fix login and update styles")
-2. **Complete** - The change is fully implemented, not half-done
-3. **Buildable** - All tests pass after the commit
-4. **Independent** - Can be understood without other commits
-
-#### When to Commit
-
-Commit after each successful:
-
-- Bug fix (even a small one)
-- Small feature implementation
-- Refactoring that improves code
-- Adding a test case
-- Documentation update
-
-#### Examples
-
-```bash
-# Good - Atomic commits
-git commit -m "fix(auth): resolve null pointer in token validation"
-git commit -m "feat(ui): add loading spinner to submit button"
-git commit -m "test(api): add unit test for question router"
-git commit -m "docs(readme): update installation instructions"
-
-# Bad - Non-atomic commits
-git commit -m "fix various bugs"           # Too vague, multiple fixes
-git commit -m "wip"                         # Work in progress
-git commit -m "update"                     # What was updated?
-git commit -m "fix and refactor"           # Mixed concerns
-```
-
-#### Workflow Integration
-
-During task implementation:
-
-1. Complete a small, working change
-2. Run tests to verify
-3. Commit immediately with descriptive message
-4. Continue to next step
-
-If you make a mistake later, you can always use `git revert` or `git reset` to fix it.
-
----
-
-## Notes
-
-- This is a **Next.js Pages Router** project (not App Router)
-- The dev server runs on **port 3005** with SSL proxy to port 3000
-- ESLint is configured to require explicit return types on complex functions
-- Prettier uses **no semicolons**
+**不造 harness 专属物。** 本项目交付三种暴露面：CLI、Web UI、Agent Skills。凡是只在某一个 agent 运行时里才成立的东西——pi 扩展、Claude hook、cron、常驻推送进程——一律出局，无论多方便：它把"这能不能用"重新绑回那个运行时，而技能格式存在的意义正是避免这件事。因此提醒与跟踪都是**拉取式**的：`AGENTS.md` 让 agent 在会话开始时拉一次到期队列，技能说明什么时候拉。绝不用后台进程。
 
 ---
 
@@ -878,7 +162,10 @@ is not handled by plugins`），而 `tsc` / `eslint` / 单测全绿——**只�
 ### 本地环境注意
 
 - 迁移可在**无数据库**时离线生成：`npx prisma migrate diff --from-schema-datamodel <旧> --to-schema-datamodel prisma/schema.prisma --script`。
-- 本地 CLI 与 e2e 都依赖 `.env`（被测仓库不含该文件，从 `.env.example` 复制）。CLI 的 owner 身份来自 `FATEBOOK_AGENT_USER_EMAIL`，**该邮箱必须已存在账号**（先在 Web 用 magic link 登录一次即可创建）。
+- 本地 CLI 与 e2e 都依赖 `.env`（被测仓库不含该文件，从 `.env.example` 复制）。CLI 的 owner 身份来自 `ASSAY_AGENT_USER_EMAIL`，**该邮箱必须已存在账号**（先在 Web 用 magic link 登录一次即可创建）。
+- **改名后（ADR-0042）的两处本地陷阱**，症状都指向错误的地方：
+  - shell 里**导出过** `DATABASE_URL` 时，`dotenv` 不覆盖它 ⇒ 命令连到改名前的库并报 `Database "<旧库名>" does not exist`。用 `env -u DATABASE_URL -u DATABASE_DIRECT_URL` 跑。
+  - 已有 `docker-compose` 数据卷上 `POSTGRES_USER` / `POSTGRES_DB` **不生效**（只在空数据目录时读），而 `pg_isready -U assay` 在角色不存在时照样通过 ⇒ 报 `FATAL: role "assay" does not exist`。手工 `CREATE ROLE assay …` + `ALTER DATABASE … OWNER TO assay`，或 `down -v`（**丢数据**）。完整步骤见 `docs/adr/0042-brand-rename-and-identifiers.md`。
 - macOS 无 `timeout` 命令；`sed -i` 需要空参数 `sed -i ''`。
 
 ---
@@ -890,6 +177,8 @@ is not handled by plugins`），而 `tsc` / `eslint` / 单测全绿——**只�
 判据是可核对的：说"已完成"就要能指出**在哪里可跑、在哪一行可读**；指不出来就不是已完成。这条并非洁癖——一次评审从同一种毛病里抓出多处：数据模型文档写着 `note`（可选补充）而全仓无人写、无人显示；`show-decision` 的 `summary` 称返回"分数"而实现只回标量；ticket 的 AC 勾着"叙事仍可补充"，而那个写入口没有任何调用方；多处 `[x]` 与其实现不符（含一条**假 `[x]`**：称某个词条已修正，而实际只改了正文、没改标题）。**声明与实现不一致时，后来的人会按声明行事，而错的是声明。**
 
 同理适用于**数字快照**："全量 N 个测试通过"这类数字一交付就陈旧，因此**优先给可重跑的命令**（`npm test` / `npm run test:e2e`）；确实要记数字，就必须标明它是**当时快照**——`docs/issues/agent-capture-mvp/verification.md` 是正例：正文给数字，紧跟一句"上表两组数字是记录当时的状态"。
+
+**借用外部术语必须在首次出现处给出处。** 术语首次出现处写清来源（作者、文献、年份、章节），中文译名以 [`CONTEXT.md`](CONTEXT.md) 为准；本工程自造的术语不要用「English / 中文」的双语格式包装——那会让读者以为有外部出处，去查却查不到。
 
 ---
 
@@ -908,12 +197,12 @@ ADR **只追加、不回改**：历史决策保持原样，新结论写进新的
 
 ## 概率显性化（对话层）
 
-本节管"当事人嘴里的说法"如何变成一个 `Forecast` 的概率数字。术语见 `CONTEXT.md` 的 `Elicitation / 概率显性化`，问法见 `.pi/skills/decision-capture/SKILL.md` 第 3 步。
+本节管"当事人嘴里的说法"如何变成一个 `Forecast` 的概率数字。术语见 `CONTEXT.md` 的 `Elicitation / 概率显性化`，问法见 `skills/decision-capture/SKILL.md` 第 3 步。
 
 - **基准：模糊的正确优于精确的错误。** 不要为了形式整齐拒绝一个粗粒度回答（"满分 10 分里的 8 分"），也不要因为一个数字"太精确"就改写它——精度本身携带信息。
 - **口语与量表回答必须折算为概率。** "七成"→0.7、10 分制的 8 分→0.8、转盘上 65% 才肯下注→候选 0.65。它们是**同一信念的不同表示**，不是另一个量；`Forecast` 只存概率。
 - **判据是"换算是否无损"。** 无损（换表示）→ 可直接落库；有损（需额外假设）→ 必须**复述给当事人确认**后再落库。
-- **否定检验只能用命题的逻辑否定。** "明天不下雨"是"明天下雨"的否定；"天晴"不是——雨 30% 与晴 10% 可由阴天 60% 补齐，因此二者**不构成矛盾**。用近义事件当否定会产生无根据的追问，而无根据的追问正是 `Compliance Number` 的来源。
+- **否定检验只能用命题的逻辑否定。** "明天不下雨"是"明天下雨"的否定；"天晴"不是——雨 30% 与晴 10% 可由阴天 60% 补齐，因此二者**不构成矛盾**。用近义事件当否定会产生无根据的追问，而无根据的追问正是「随口给的数字」的来源。
 - **具体化量到的是偏好，不是信念。** 赌局同时测出风险偏好与赌注大小，其输出只是候选值，必须经当事人确认；**不得由 agent 按"风险中性"自行折算**。
 - **折算结果的录入来源（ADR-0008 / ADR-0024）：** 直接说出的百分比、量表折算结果、经确认的具体化候选值，都算"数字由当事人给出"（已背书）；只有 agent 自己产生、当事人从未说过的数字才是 `--agent-collected`（未背书，须背书后才计入校准）。**默认方向按调用上下文决定**：agent 代跑（环境里有 `AI_AGENT` / `PI_CODING_AGENT`）时默认未背书，人自己在终端里敲时默认已背书；`--stated-by-owner` 与 `--agent-collected` 是显式声明，永远压过默认。旧值 `AGENT_INSTRUCTED` 已不再产生（历史行仍在库里）。
 
@@ -1010,20 +299,20 @@ ADR-0011）；**清单“未记录”不等于“没做到”**（ADR-0038）。
 
 **先选身份，再动手**：两种身份的可用范围不同（见下表）。
 
-|          | 正式身份（推荐）                                                                               | 验证账号                                                                                                                                                                                                 |
-| -------- | ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 怎么来   | 网页用**带点域名的邮箱**登录 → `/api-setup` 复制 key → 写进 `.env` 的 `FATEBOOK_AGENT_API_KEY` | `npm run --silent agent -- init --label <名> --allow-create-user`（建出 `<名>@localhost`）                                                                                                               |
-| 能上网页 | ✅ 一个身份两条渠道（agent 写的，网页看得见、可背书）                                          | ✅ 可，走**配对码**：`FATEBOOK_ENABLE_PAIRING_LOGIN=1` 后 `issue-pairing-code` → 本机打开 `/pair` 填码（ADR-0035）。❌ 邮件门仍然进不去：域名不带点的地址在 NextAuth 发信前就被拒（`error=EmailSignin`） |
-| 适合     | 走完整回路、UAT、任何"人要看到数据"的场景                                                      | 纯 CLI 检查、脚本、迁移验证、e2e                                                                                                                                                                         |
+|          | 正式身份（推荐）                                                                            | 验证账号                                                                                                                                                                                              |
+| -------- | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 怎么来   | 网页用**带点域名的邮箱**登录 → `/api-setup` 复制 key → 写进 `.env` 的 `ASSAY_AGENT_API_KEY` | `npm run --silent agent -- init --label <名> --allow-create-user`（建出 `<名>@localhost`）                                                                                                            |
+| 能上网页 | ✅ 一个身份两条渠道（agent 写的，网页看得见、可背书）                                       | ✅ 可，走**配对码**：`ASSAY_ENABLE_PAIRING_LOGIN=1` 后 `issue-pairing-code` → 本机打开 `/pair` 填码（ADR-0035）。❌ 邮件门仍然进不去：域名不带点的地址在 NextAuth 发信前就被拒（`error=EmailSignin`） |
+| 适合     | 走完整回路、UAT、任何"人要看到数据"的场景                                                   | 纯 CLI 检查、脚本、迁移验证、e2e                                                                                                                                                                      |
 
 **规则（按踩坑顺序）**
 
 1. **把网页账号的 key 交给 agent**（Web → CLI 是常态）。不要用 `init` 建的 `<label>@localhost` 去走**邮件门**（发信前就被拒）；它要进网页就走配对码（默认关闭，见上表）。
 2. **换身份后重跑 `./startup.sh`**。领域词表**按用户**存（`@@unique([nameNormalized, userId])`）；不重跑时 `create-decision --tags 投资/宏观` 会报“未知领域”。
 3. **本地 magic link 只会到 Mailpit**（<http://localhost:8025>），不进真邮箱。只要域名带点，填一个你并不拥有的地址也能登录。
-4. **想造"两面都能用"的本地身份**：用带点的地址（`FATEBOOK_AGENT_USER_EMAIL=you@fatebook.local`）最省事；已经建好的 `<label>@localhost` 也可以是两面的——用配对码进网页，不必重建。
-5. **签发配对码要求真凭据**（ADR-0035）：`issue-pairing-code` 在 `FATEBOOK_AGENT_USER_EMAIL` 那条路径上**会被拒**——那是**身份选择器**（不含秘密，谁设了都能以该身份跑命令），过程层是 `credentialProcedure`，只认 `ctx.authentication === "credential"`。要签发就把 key 放进环境变量或 `FATEBOOK_AGENT_API_KEY_FILE`；`whoami` 会告诉你当前是哪一档。
-6. **身份作用域是进程，不是目录**（ADR-0036）：优先级 `--api-key` > `FATEBOOK_AGENT_API_KEY` > `FATEBOOK_AGENT_API_KEY_FILE`（文件里只放一把钥匙，从头到尾不留 shell 历史）> `FATEBOOK_AGENT_USER_EMAIL`。所在副本的 `.env` 只是**默认来源**：同一个目录里跑两个进程、各自带一把钥匙，就是两个身份；同一把钥匙被两个进程用，则两边是同一个身份（允许）。**一个进程内不换身份。**
+4. **想造"两面都能用"的本地身份**：用带点的地址（`ASSAY_AGENT_USER_EMAIL=you@assay.local`）最省事；已经建好的 `<label>@localhost` 也可以是两面的——用配对码进网页，不必重建。
+5. **签发配对码要求真凭据**（ADR-0035）：`issue-pairing-code` 在 `ASSAY_AGENT_USER_EMAIL` 那条路径上**会被拒**——那是**身份选择器**（不含秘密，谁设了都能以该身份跑命令），过程层是 `credentialProcedure`，只认 `ctx.authentication === "credential"`。要签发就把 key 放进环境变量或 `ASSAY_AGENT_API_KEY_FILE`；`whoami` 会告诉你当前是哪一档。
+6. **身份作用域是进程，不是目录**（ADR-0036）：优先级 `--api-key` > `ASSAY_AGENT_API_KEY` > `ASSAY_AGENT_API_KEY_FILE`（文件里只放一把钥匙，从头到尾不留 shell 历史）> `ASSAY_AGENT_USER_EMAIL`。所在副本的 `.env` 只是**默认来源**：同一个目录里跑两个进程、各自带一把钥匙，就是两个身份；同一把钥匙被两个进程用，则两边是同一个身份（允许）。**一个进程内不换身份。**
 7. **判据（排查登录问题时用，别靠猜）**：
    - 打一次登录接口看是哪种结局：`curl -s -c /tmp/cj http://localhost:3000/api/auth/csrf` 取 token，再 `POST /api/auth/signin/email`（带 `csrfToken` / `email` / `callbackUrl`）——落在 `verify-request` 是**发信成功**，落在 `error=EmailSignin` 是**地址被拒**。
    - 想知道是"邮件层"还是"应用层"：直接对 Mailpit（`smtp://localhost:1025`）试投同一个地址。**Mailpit 收得下而应用报错 ⇒ 问题在地址校验，不在邮件服务。**

@@ -162,7 +162,7 @@
             "patterns": [
               {
                 "group": ["**/prisma", "**/prisma.ts"],
-                "message": "CLI 命令层不得直接碰 prisma（AGENTS.md §10「One backend, three exposures」）：业务规则只有一份实现（lib/web/ 的过程），CLI 只是它的第二个传输层，自己写一条查询就是第二份规则。身份查找 / 连接收尾属基础设施，在 cli/context.ts、cli/init.ts、cli/index.ts 里。"
+                "message": "CLI 命令层不得直接碰 prisma（AGENTS.md §8「One backend, three exposures」）：业务规则只有一份实现（lib/web/ 的过程），CLI 只是它的第二个传输层，自己写一条查询就是第二份规则。身份查找 / 连接收尾属基础设施，在 cli/context.ts、cli/init.ts、cli/index.ts 里。"
               }
             ]
           }

@@ -1,4 +1,4 @@
-# nano-fatebook-agent
+# 试金石
 
 一个 **Agent 原生的决策质量提升系统**。它在日常对话中捕获决策，把隐含的信念显性化为可结算的概率预测，并长期追踪，从而把**决策质量**与**结果质量**分开。
 
@@ -36,7 +36,7 @@ Agent 通过本地 CLI 与系统交互。CLI 用 `createCaller` 调用与网页*
 
 ```shell
 # owner 身份来自环境
-export FATEBOOK_AGENT_USER_EMAIL=you@example.com
+export ASSAY_AGENT_USER_EMAIL=you@example.com
 
 npm run --silent agent -- list-due                       # 已到期且未结算
 npm run --silent agent -- create-prediction \
@@ -89,7 +89,7 @@ Agent 写入的记录会标注录入来源，并**从未背书**开始——它�
 ### 质量门禁
 
 - Jest 单元测试覆盖：计分、校准样本过滤、结算（含背书触发的重算）、结算生效范围规则（ADR-0031 §六：无来源且由他人确认的结算，会让另一位预测者的样本悬空）、领域命名与判重、领域读数、修订规划、决策清单 / 决策版本规则、凭据→身份分发、LLM 解析、CLI 参数解析与表单行为。`jest.config.ts` 里逐文件的 `coverageThreshold` 给逻辑最密的模块设了下限（含 `domain_stats` / `domain_tags` / `settlement_scope` / `tags_router`）以及校准图端点。
-- `cli/parity.test.ts` 从源码读出两个交互面，某条过程只在一侧可达且未登记理由时变红（AGENTS.md §10 / ADR-0023）。`lib/skills_contract.test.ts` 对技能做同样的事：技能里每条 `agent -- <命令>` 必须真实存在，每个写入示例必须声明录入来源。
+- `cli/parity.test.ts` 从源码读出两个交互面，某条过程只在一侧可达且未登记理由时变红（AGENTS.md §8 / ADR-0023）。`lib/skills_contract.test.ts` 对技能做同样的事：技能里每条 `agent -- <命令>` 必须真实存在，每个写入示例必须声明录入来源。
 - `scripts/verify-migration-upgrade.ts` 升级一个**已有数据**的库（先应用升级前的迁移并插入旧结构数据，再 `migrate deploy`），断言本阶段两条回填——`Tag.nameNormalized = lower(name)` 与 `Question.confirmedByUserId = 作者`——以及新的不区分大小写标签键发生冲突时**大声失败**。空库上的 `migrate deploy` 抓不到其中任何一条。它在 CI 的 e2e 任务里运行。
 - Playwright 端到端测试：人登录 → 创建 → 结算的完整旅程；agent 经 CLI 写入 → 人在网页背书 / 确认提案；决策领域 → 预测 → 领域读数；悬空 → 补录来源 → 重算计入。另有真 Postgres 上的 `SetNull` 回归。
 - CI 在每次 PR 上运行 lint + typecheck + `test:coverage` + 迁移升级验证 + e2e + `next build`，并上传覆盖率与 Playwright 报告作为产物。
@@ -105,7 +105,7 @@ Agent 写入的记录会标注录入来源，并**从未背书**开始——它�
 3. **追问**——向用户索取模糊表述背后的具体置信度数字（“我觉得能成” → “六成还是八成？什么时候前？”）。
 4. **记录**——带着明确的结算标准持久化这些预测。
 5. **校准**——结果揭晓后进入校准与评分闭环。
-6. **矫正**——用决策卫生工具（事前剖析、杀死标准、尤利西斯合同、名义群体、寻真小组）改进**过程**，而不只是分数。
+6. **矫正**——用决策卫生工具（事前剖析、退出条件、预先设限、先独立后集中、三人独立咨询）改进**过程**，而不只是分数。
 
 **记录与跟踪是分离的。** 记录 Agent 在对话内工作，只负责把决策与预测写下来——结算判据、结算标准与评分锚点在决策时冻结。跟踪委托给**独立上下文中的另一个 Agent**，因此事后重新解释“当初的意思”无法渗入结算。
 
@@ -155,7 +155,7 @@ Agent 写入的记录会标注录入来源，并**从未背书**开始——它�
 
 1. `npm run dev:e2e`，打开 <http://localhost:3000>，用这个邮箱登录。本地这封登录信**不会进你的真邮箱**，而是被 **Mailpit** 截在 <http://localhost:8025>——所以不需要 SMTP 账号。（真部署时把 `AUTH_EMAIL_SERVER` 指向真实发信服务，链接就会进真收件箱。）
 2. 登录后打开 **<http://localhost:3000/api-setup>**，复制 **Your API key**。未登录时那一页只有登录**按钮**：它会直接把 key 给你。
-3. 写进 `.env`：`FATEBOOK_AGENT_API_KEY=…`。于是 CLI 与网页是**同一个账号**：agent 记的东西在网页上看得见，也能在网页上背书。不想让钥匙进 shell 历史或 `ps` 的话，改用 `FATEBOOK_AGENT_API_KEY_FILE=<路径>`（文件里只放这一把钥匙，末尾换行无所谓）。
+3. 写进 `.env`：`ASSAY_AGENT_API_KEY=…`。于是 CLI 与网页是**同一个账号**：agent 记的东西在网页上看得见，也能在网页上背书。不想让钥匙进 shell 历史或 `ps` 的话，改用 `ASSAY_AGENT_API_KEY_FILE=<路径>`（文件里只放这一把钥匙，末尾换行无所谓）。
 4. **重跑一次 `./startup.sh`**。四个初始领域词是**按用户**存的，新身份要有自己的一套——不重跑时 `create-decision --tags 投资/宏观` 会报“未知领域”。
 5. 在 pi 里与 agent 对话（`startup.sh` 已装好两个技能），然后到网页 `/decisions`、`/domains` 复盘。
 
@@ -175,14 +175,14 @@ npm run --silent agent -- init --label my-check --allow-create-user
 
 ```shell
 # 1. 打开开关（默认关闭是决策本身，不是疏漏）
-echo 'FATEBOOK_ENABLE_PAIRING_LOGIN=1' >> .env
+echo 'ASSAY_ENABLE_PAIRING_LOGIN=1' >> .env
 # 2. 重启 Web 服务，然后签发一个码
 npm run --silent agent -- issue-pairing-code
 # → {"code":"XXXXXXXX","expiresAt":"…","redeemUrl":"https://localhost:3000/pair"}
 # 3. 在这台机器上打开 redeemUrl，填码
 ```
 
-五条限制都在服务端（`pages/api/pairing/redeem.ts`）：**只在本机（loopback）可兑换**、**只收 JSON 请求体**（跨站 `<form>` 发不进来）、**一次有效**、**10 分钟**、**失败限流**。签发那一半要**真凭据**：过程层是 `credentialProcedure`，所以网页会话（邮件门或配对码门）与只设了 `FATEBOOK_AGENT_USER_EMAIL` 的进程都会拿到 `FORBIDDEN`——后者是身份选择器，不含秘密（`CONTEXT.md`）。码本身在库里只存哈希，明文只在签发那一刻打印；换来的 cookie 与邮件门同为**会话 cookie**（关掉浏览器即失效）。
+五条限制都在服务端（`pages/api/pairing/redeem.ts`）：**只在本机（loopback）可兑换**、**只收 JSON 请求体**（跨站 `<form>` 发不进来）、**一次有效**、**10 分钟**、**失败限流**。签发那一半要**真凭据**：过程层是 `credentialProcedure`，所以网页会话（邮件门或配对码门）与只设了 `ASSAY_AGENT_USER_EMAIL` 的进程都会拿到 `FORBIDDEN`——后者是身份选择器，不含秘密（`CONTEXT.md`）。码本身在库里只存哈希，明文只在签发那一刻打印；换来的 cookie 与邮件门同为**会话 cookie**（关掉浏览器即失效）。
 
 > 开关**不能用 `NODE_ENV` 推断**：在内网主机上跑开发模式时那等于给一台服务家人的机器开后门。要对外提供服务时请走**邮件门**（它一直是保留的那条路），并把发信域配好 SPF/DKIM。
 
@@ -231,13 +231,13 @@ npm run test:e2e
 
 ## 项目文档
 
-| 文档                                   | 内容                           |
-| -------------------------------------- | ------------------------------ |
-| [`CONTEXT.md`](./CONTEXT.md)           | 统一语言 / 术语表              |
-| [`docs/roadmap.md`](./docs/roadmap.md) | 阶段计划 + 待定决策            |
-| [`docs/adr/`](./docs/adr/)             | 架构决策记录                   |
-| [`knowledge/`](./knowledge/)           | 工程笔记（部分为 fork 前遗留） |
-| [`AGENTS.md`](./AGENTS.md)             | AI Agent 工作约定              |
+| 文档                                   | 内容                |
+| -------------------------------------- | ------------------- |
+| [`CONTEXT.md`](./CONTEXT.md)           | 统一语言 / 术语表   |
+| [`docs/roadmap.md`](./docs/roadmap.md) | 阶段计划 + 待定决策 |
+| [`docs/adr/`](./docs/adr/)             | 架构决策记录        |
+| [`knowledge/`](./knowledge/)           | 故障排查笔记        |
+| [`AGENTS.md`](./AGENTS.md)             | AI Agent 工作约定   |
 
 ## License
 

@@ -5,7 +5,7 @@ import { decisionRouter } from "../lib/web/decision_router"
 import { tagsRouter } from "../lib/web/tags_router"
 
 /**
- * 交互面对等守门测试（AGENTS.md 第 10 节 / [ADR-0023](../../docs/adr/0023-interaction-surface-parity.md)）。
+ * 交互面对等守门测试（AGENTS.md 第 8 节 / [ADR-0023](../../docs/adr/0023-interaction-surface-parity.md)）。
  *
  * 规则：**CLI 与 Web 是同一套能力的两个交互面**。一条 tRPC procedure 只在一侧可达，
  * 就必须登记为有意例外并写明理由；"沉默的缺失"不被容忍。
@@ -220,7 +220,7 @@ function procedureNames(router: unknown): string[] {
 /**
  * 守门判定本身（纯函数，便于用合成数据验证它真的会变红）。
  *
- * AGENTS.md §10 的规则是"**一面有的能力，另一面必须有**"，等价说法：一条 procedure
+ * AGENTS.md §8 的规则是"**一面有的能力，另一面必须有**"，等价说法：一条 procedure
  * **只有两侧都可达**才算对等；缺任意一侧都必须登记理由。
  *
  * 注意"缺任意一侧"包含**两侧都缺**（声明了却没有任何入口能到达它）——这不是
@@ -262,7 +262,7 @@ const ALL_PROCEDURES = [
   ...procedureNames(tagsRouter).map((name) => `tags.${name}`),
 ].sort()
 
-describe("对等性守门（AGENTS.md §10 / ADR-0023）", () => {
+describe("对等性守门（AGENTS.md §8 / ADR-0023）", () => {
   it("两侧的 procedure 都能被发现（否则这道门是在守一个空集合）", () => {
     expect(ALL_PROCEDURES.length).toBeGreaterThanOrEqual(18)
     expect(cliSurface().size).toBeGreaterThanOrEqual(15)

@@ -5,7 +5,7 @@ import { DomainAssessment } from "../lib/web/domain_stats"
 import { api } from "../lib/web/trpc"
 
 /**
- * 领域读数页（ADR-0032 / ADR-0033 · ticket 03；对等要求见 AGENTS.md §10）。
+ * 领域读数页（ADR-0032 / ADR-0033 · ticket 03；对等要求见 AGENTS.md §8）。
  *
  * 这里呈现与 CLI `domain-report` **同一份**读数（同一个过程、同一个纯函数）。
  * 页面不做任何自己的统计——一旦在页面里"顺手算一下"，两侧的数字迟早会不一致，

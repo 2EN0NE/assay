@@ -18,10 +18,10 @@
 
 ```bash
 # 1. 建库
-docker exec nano-fatebook-agent-db-1 psql -U fatebook -d postgres -c "CREATE DATABASE fatebook_uat"
+docker compose exec -T db psql -U assay -d postgres -c "CREATE DATABASE assay_uat"
 
 # 2. 把 .env 里的**两个**变量都指过去（只改 DATABASE_URL 不够，见下方说明）
-#    DATABASE_URL=postgresql://fatebook:fatebook@localhost:5432/fatebook_uat
+#    DATABASE_URL=postgresql://assay:postgres@localhost:5432/assay_uat
 #    DATABASE_DIRECT_URL=（同上）
 npx prisma migrate deploy
 
@@ -33,7 +33,22 @@ SEED_USER_ID=<上一步的 userId> npx tsx scripts/seed-uat-samples.ts
 > **为什么必须同时改 `DATABASE_DIRECT_URL`**：`prisma/schema.prisma` 里写着
 > `directUrl = env("DATABASE_DIRECT_URL")`，而**迁移走的是 directUrl**。只改 `DATABASE_URL`
 > 的话，`prisma migrate deploy` 会安静地把迁移应用到开发库，而你以为在给 UAT 库建表
-> （实测踩过：`Datasource "db": … "fatebook_development"` 而命令没有报错）。
+> （实测踩过：`Datasource "db": … "assay_development"` 而命令没有报错）。
+
+> **角色名（`assay`）需要手工存在**：`docker-compose.yml` 里的 `POSTGRES_USER` / `POSTGRES_DB` **只在空数据目录时生效**——用旧卷的机器上 initdb 建的角色仍是 `fatebook`，而
+> `pg_isready -U assay` 在角色不存在时照样返回成功，所以上面第 1 步会报
+> `FATAL: role "assay" does not exist`。对齐方式：
+>
+> ```bash
+> docker compose exec -T db psql -U fatebook -d postgres \
+>   -c "CREATE ROLE assay LOGIN SUPERUSER PASSWORD 'postgres'" \
+>   -c "ALTER DATABASE assay_development OWNER TO assay"
+> ```
+>
+> 或 `docker compose down -v`（**会丢掉本地库全部数据**）。同样地，shell 里若**导出**过
+> `DATABASE_URL`，`dotenv` 不会覆盖它，命令会连到你导出那个库并报
+> `Database "<改名前的库名>" does not exist`——用
+> `env -u DATABASE_URL -u DATABASE_DIRECT_URL` 跑一次即可（见 [ADR-0042](adr/0042-brand-rename-and-identifiers.md)）。
 
 ### 技能放在哪里，为什么
 
@@ -58,7 +73,7 @@ SEED_USER_ID=<上一步的 userId> npx tsx scripts/seed-uat-samples.ts
 | **Agent** | CLI（`npm run --silent agent -- …`） | 记录、查询、提案、回报触达                   |
 | **库**    | Postgres                             | 唯一真相                                     |
 
-CLI 与 Web 是同一套能力的两个交互面（AGENTS.md 第 10 节），**不是两个产品**；哪一侧缺入口，
+CLI 与 Web 是同一套能力的两个交互面（AGENTS.md 第 8 节），**不是两个产品**；哪一侧缺入口，
 都必须登记为有意例外并写明理由（`cli/parity.test.ts`）。
 
 ## 2. 剧本：四段
@@ -151,7 +166,7 @@ npm run --silent agent -- decide-proposal --proposal-id <P> --accept
 **跑什么**：`npm run --silent agent -- domain-report --prefix 投资/宏观`，
 或页面 `/domains?prefix=投资/宏观`。
 
-**看到什么**（下面是 2026-09-16 在 `fatebook_uat` 上灌入合成样本后的**实际输出**，
+**看到什么**（下面是 2026-09-16 在 `assay_uat` 上灌入合成样本后的**实际输出**，
 不是"应当如此"）：
 
 ```text
@@ -202,19 +217,19 @@ $ domain-report --prefix 投资/交易水平
 
 ## 4. 常见故障
 
-| 现象                                                                                                  | 原因                                                                                             | 处理                                                                                                                                                                                                                       |
-| ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| pi 里 skill 完全不生效                                                                                | 项目未被信任，或技能没安装                                                                       | `./startup.sh` 重装；或 `pi --skill .agents/skills/<名>/SKILL.md`                                                                                                                                                          |
-| agent 报"没有可用身份"                                                                                | `.env` 里没有 `FATEBOOK_AGENT_API_KEY`                                                           | 跑 `./startup.sh`，或 `init` 后把 key 写进 `.env`                                                                                                                                                                          |
-| 迁移"成功"但目标库没表                                                                                | 只改了 `DATABASE_URL`，没改 `DATABASE_DIRECT_URL`                                                | 两个都改（见 §0）                                                                                                                                                                                                          |
-| `npm run dev` 打不开                                                                                  | 它需要 `localhost.pem`（本仓库未提供）                                                           | 用 `npm run dev:e2e` + `http://localhost:3000`                                                                                                                                                                             |
-| Web 登录收不到信                                                                                      | Mailpit 没起                                                                                     | `docker compose up -d mail`，开 `http://localhost:8025`（邮件就在那儿）                                                                                                                                                    |
-| `/api-setup` 上找不到输入 key 的地方                                                                  | 那一页是“登录后**给你** key”，不是让你粘贴                                                       | 点 “Sign in to set up your API key”（**它是按钮**）→ 去 `http://localhost:8025` 点邮件里的链接 → 回来复制 “Your API key”                                                                                                   |
-| 想让 agent 与网页是同一个身份                                                                         | 常态是 **Web → CLI**：用网页的 key 喂 agent（反向也可以：把 CLI 身份用配对码带到网页，ADR-0035） | 把 `/api-setup` 上的 key 写进 `.env` 的 `FATEBOOK_AGENT_API_KEY`；再重跑 `./startup.sh` 给这个身份建词表（见下一行）                                                                                                       |
-| 换完 key 后 `list-domains` 空了、建决策报“未知领域”                                                   | 领域词表是**按用户**存的（唯一键 `nameNormalized + userId`）                                     | **重跑 `./startup.sh`**（幂等，会为新身份建那四个词），或手动 `add-domain` 四次                                                                                                                                            |
-| 用 `<label>@localhost` 走**邮件门**登录网页报 **The e-mail could not be sent**（`error=EmailSignin`） | **登录邮箱的域名必须带点**——不是收不到信，是信**发不出去**                                       | 邮件门别试这条。要让它进网页就走**配对码**（ADR-0035，默认关）：`FATEBOOK_ENABLE_PAIRING_LOGIN=1` → `issue-pairing-code` → 本机打开 `/pair` 填码。想换个带点地址建身份也行：`FATEBOOK_AGENT_USER_EMAIL=you@fatebook.local` |
-| 服务端开关明明开着，`issue-pairing-code` 却说「配对码登录当前是关闭的」                               | 开关只给了 Web 进程（`npm run dev:e2e` 把它写在命令里），**CLI 进程**读的是 `.env`               | 把 `FATEBOOK_ENABLE_PAIRING_LOGIN=1` 写进 `.env`（两侧就一致），再重启 Web 服务                                                                                                                                            |
-| `issue-pairing-code` 报「签发配对码要求持有凭据（API key）」                                          | 当前身份来自 `FATEBOOK_AGENT_USER_EMAIL`——那是**身份选择器**，不含秘密，签不了码（ADR-0035）     | `whoami` 看 `credentialSource`；换成 `FATEBOOK_AGENT_API_KEY` 或 `FATEBOOK_AGENT_API_KEY_FILE` 再签发                                                                                                                      |
+| 现象                                                                                                  | 原因                                                                                             | 处理                                                                                                                                                                                                              |
+| ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| pi 里 skill 完全不生效                                                                                | 项目未被信任，或技能没安装                                                                       | `./startup.sh` 重装；或 `pi --skill .agents/skills/<名>/SKILL.md`                                                                                                                                                 |
+| agent 报"没有可用身份"                                                                                | `.env` 里没有 `ASSAY_AGENT_API_KEY`                                                              | 跑 `./startup.sh`，或 `init` 后把 key 写进 `.env`                                                                                                                                                                 |
+| 迁移"成功"但目标库没表                                                                                | 只改了 `DATABASE_URL`，没改 `DATABASE_DIRECT_URL`                                                | 两个都改（见 §0）                                                                                                                                                                                                 |
+| `npm run dev` 打不开                                                                                  | 它需要 `localhost.pem`（本仓库未提供）                                                           | 用 `npm run dev:e2e` + `http://localhost:3000`                                                                                                                                                                    |
+| Web 登录收不到信                                                                                      | Mailpit 没起                                                                                     | `docker compose up -d mail`，开 `http://localhost:8025`（邮件就在那儿）                                                                                                                                           |
+| `/api-setup` 上找不到输入 key 的地方                                                                  | 那一页是“登录后**给你** key”，不是让你粘贴                                                       | 点 “Sign in to set up your API key”（**它是按钮**）→ 去 `http://localhost:8025` 点邮件里的链接 → 回来复制 “Your API key”                                                                                          |
+| 想让 agent 与网页是同一个身份                                                                         | 常态是 **Web → CLI**：用网页的 key 喂 agent（反向也可以：把 CLI 身份用配对码带到网页，ADR-0035） | 把 `/api-setup` 上的 key 写进 `.env` 的 `ASSAY_AGENT_API_KEY`；再重跑 `./startup.sh` 给这个身份建词表（见下一行）                                                                                                 |
+| 换完 key 后 `list-domains` 空了、建决策报“未知领域”                                                   | 领域词表是**按用户**存的（唯一键 `nameNormalized + userId`）                                     | **重跑 `./startup.sh`**（幂等，会为新身份建那四个词），或手动 `add-domain` 四次                                                                                                                                   |
+| 用 `<label>@localhost` 走**邮件门**登录网页报 **The e-mail could not be sent**（`error=EmailSignin`） | **登录邮箱的域名必须带点**——不是收不到信，是信**发不出去**                                       | 邮件门别试这条。要让它进网页就走**配对码**（ADR-0035，默认关）：`ASSAY_ENABLE_PAIRING_LOGIN=1` → `issue-pairing-code` → 本机打开 `/pair` 填码。想换个带点地址建身份也行：`ASSAY_AGENT_USER_EMAIL=you@assay.local` |
+| 服务端开关明明开着，`issue-pairing-code` 却说「配对码登录当前是关闭的」                               | 开关只给了 Web 进程（`npm run dev:e2e` 把它写在命令里），**CLI 进程**读的是 `.env`               | 把 `ASSAY_ENABLE_PAIRING_LOGIN=1` 写进 `.env`（两侧就一致），再重启 Web 服务                                                                                                                                      |
+| `issue-pairing-code` 报「签发配对码要求持有凭据（API key）」                                          | 当前身份来自 `ASSAY_AGENT_USER_EMAIL`——那是**身份选择器**，不含秘密，签不了码（ADR-0035）        | `whoami` 看 `credentialSource`；换成 `ASSAY_AGENT_API_KEY` 或 `ASSAY_AGENT_API_KEY_FILE` 再签发                                                                                                                   |
 
 ## 5. 结论：机制成立 vs 统计是否成立
 
@@ -268,7 +283,7 @@ npm test -- docs_commands                       # 文档里的命令都真实存
 > **当前状态：未实现，本节三条全部未验证。** 它按 ADR-0040 §六 属于仓库外的独立包，
 > 本轮只交付了基线与本节的验收清单。不要把下面这张表当成"已验证的行为"。
 
-装了扩展时，会话开头应当多出一块 `<fatebook-status state="live">`。三条失败态也必须可见：
+装了扩展时，会话开头应当多出一块 `<assay-status state="live">`。三条失败态也必须可见：
 
 | 场景                | 期望                                                         |
 | ------------------- | ------------------------------------------------------------ |

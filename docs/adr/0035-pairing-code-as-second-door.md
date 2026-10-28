@@ -1,5 +1,7 @@
 # 网页的第二扇门：用一次性配对码把凭据换成会话
 
+> **此处已变：** 实现注记里的 `FATEBOOK_ENABLE_PAIRING_LOGIN` / `FATEBOOK_AGENT_USER_EMAIL` 已由 [ADR-0042](./0042-brand-rename-and-identifiers.md) 改为 `ASSAY_ENABLE_PAIRING_LOGIN` / `ASSAY_AGENT_USER_EMAIL`；决策内容不变，正文保留原样。
+
 本 ADR 补充 [ADR-0023](./0023-interaction-surface-parity.md) 的例外清单中「登录 / 取得凭据」一行（原句：「Web 邮件登录；CLI 凭据」——现在 Web 侧不再只有邮件一条路）。**本文不改动 [ADR-0021](./0021-cli-identity-by-credential.md) 与 [ADR-0036](./0036-identity-scope-is-the-process.md) 的任何规定**：签发仍只在 CLI 侧，身份仍由进程持有，凭据仍只有一种。配对码不是第二类凭据，它只是把同一身份带到另一处会话。
 
 网页今天只有一扇门：邮件魔法链接。`pages/api/auth/[...nextauth].ts` 的 `authOptions.providers` 只注册了 `EmailProvider`；`.env.example` 里那对 `GOOGLE_CLIENT_ID/SECRET` 是**上游残留**——全仓库没有 `GoogleProvider`，也没有 `signIn("google")`。这扇门的代价是「能否进入」永远绑在「邮件可达」上：本地把邮件换成了 Mailpit，于是地址一旦不合规（域名不带点，例如 `init` 建出的 `<label>@localhost`）就彻底进不去（`error=EmailSignin`），而且这个失败发生在**发信之前**，看起来像权限坏了。

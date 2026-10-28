@@ -1,5 +1,7 @@
 # CLI 的身份与来源接口：按凭据解析身份，来源用正向声明
 
+> **此处已变：** 「身份来源优先级」一条里的 `FATEBOOK_AGENT_API_KEY` / `FATEBOOK_AGENT_USER_EMAIL` 已由 [ADR-0042](./0042-brand-rename-and-identifiers.md) 改为 `ASSAY_AGENT_API_KEY` / `ASSAY_AGENT_USER_EMAIL`（阶梯与顺序不变，正文保留原样）。
+
 CLI 的每条命令都**自带身份与来源**，不引入会话级状态：
 
 - **身份来源优先级**：`--api-key`（单条覆盖，仅用于测试与自动化）> `FATEBOOK_AGENT_API_KEY`（项目级，与 [ADR-0021](./0021-cli-identity-by-credential.md) 的"仓库副本"作用域一致）> `FATEBOOK_AGENT_USER_EMAIL`（遗留回退）。

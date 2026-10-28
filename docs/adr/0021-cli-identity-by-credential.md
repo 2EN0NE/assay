@@ -1,5 +1,7 @@
 # CLI 身份按凭据分发，作用域取仓库副本
 
+> **此处已变：** 正文里的 `FATEBOOK_AGENT_USER_EMAIL` 已由 [ADR-0042](./0042-brand-rename-and-identifiers.md) 改为 `ASSAY_AGENT_USER_EMAIL`；决策内容不变，正文按"只追加"原则保留原样。
+
 取代 [ADR-0015](./0015-local-cli-as-agent-interface.md) 中「在"仅个人"前提下取固定 owner（环境变量指定），而非按用户凭据分发」这一条：CLI 的身份改为**每个身份各自持有一把凭据**，复用本仓库既有的机制（`User.apiKey` 与 `getUserByApiKeyOrThrow`，它本就在 `question_router` 里服务外部 API），作用域取**仓库副本**——不同的 checkout 可以是不同的身份，同一副本内的所有子目录是同一个身份。**本句的「作用域」已被 [ADR-0036](./0036-identity-scope-is-the-process.md) 收窄**：副本仍是**默认来源**，但进程可显式覆盖——即同一副本内的**多个进程**可以是多个身份。原句保留不动，仅此注。
 
 数据模型**不需要改动**：`Decision.userId`、`Forecast.userId`、`QuestionScore.userId` 早已按人归属，同题多预测者与跨人相对分在模型上已经成立。本轮**只留接缝**，不实现可见性、邀请与跨身份读取的语义——那些留待后续 ADR。

@@ -1,6 +1,8 @@
 # CLI 与 Web 是同一套能力的两个交互面，不是两个产品
 
-本工程设计的功能（Decision、Prediction、清单与叙事、结算、触达），**一面有的能力，另一面必须有**。差异只允许出现在形态与操作习惯上——CLI 面向 Agent 与脚本（确定性 JSON、一条命令），Web 面向人（并排、颜色、可点击）。形态不同不等于能力缺失。规范条文见 [AGENTS.md](../../AGENTS.md) 第 10 节。
+> **此处已变：** 正文与例外清单里的 `FATEBOOK_AGENT_USER_EMAIL` 已由 [ADR-0042](./0042-brand-rename-and-identifiers.md) 改为 `ASSAY_AGENT_USER_EMAIL`；决策内容不变，正文按"只追加"原则保留原样。
+
+本工程设计的功能（Decision、Prediction、清单与叙事、结算、触达），**一面有的能力，另一面必须有**。差异只允许出现在形态与操作习惯上——CLI 面向 Agent 与脚本（确定性 JSON、一条命令），Web 面向人（并排、颜色、可点击）。形态不同不等于能力缺失。规范条文见 [AGENTS.md](../../AGENTS.md) 第 8 节。
 
 **范围**：只覆盖本工程自己定义的功能面。fork 继承来的旧功能（Slack、Discord、Chrome 扩展、锦标赛、博客）不受此约束——它们本来就只存在于单侧，且多数已被 ADR-0013 排除出 MVP。
 
@@ -39,4 +41,4 @@
 
 > **注**：上表两行与 [ADR-0035](./0035-pairing-code-as-second-door.md) 对应。配对码的**兑换**是一个 Next.js API 端点（`pages/api/pairing/redeem.ts` + `pages/pair.tsx`），不是 tRPC 过程——所以它不在这张"过程级"登记表里，而由 `e2e/pairing-login.spec.ts` 保护。
 >
-> 另注：`issue-pairing-code` **不出现在任何 `SKILL.md`** 里，这是登记过的缺席而非遗漏——技能是「捕获」「跟踪」两条 Agent 回路的投影，而签发服务的是**人换门**（把 CLI 身份带进浏览器），不属于任何回路（AGENTS.md §10 的顺序管的是能力落位，不是"每条命令都必须进技能"）。
+> 另注：`issue-pairing-code` **不出现在任何 `SKILL.md`** 里，这是登记过的缺席而非遗漏——技能是「捕获」「跟踪」两条 Agent 回路的投影，而签发服务的是**人换门**（把 CLI 身份带进浏览器），不属于任何回路（AGENTS.md §8 的顺序管的是能力落位，不是"每条命令都必须进技能"）。

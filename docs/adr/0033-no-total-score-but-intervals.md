@@ -47,6 +47,6 @@ ADR-0032（R4）定了判据是"相对领域基准率的技能分"，R5 决定�
 
 - **实现**：一个纯函数的 bootstrap（现有 JS 即可，**不新增依赖**）+ 固定种子；落在结果读数一侧，不进聚合热路径。
 - **CLI**：`domain-report` 输出 `skillScore` / `ci` / `brier` / `brierRef` / `n` / `pending` / `verdict`（`better` / `worse` / `inconclusive`）。
-- **Web**：同四件读数 + 区间，`verdict` 用同样的三态文案（AGENTS.md §10 对等）。
+- **Web**：同四件读数 + 区间，`verdict` 用同样的三态文案（AGENTS.md §8 对等）。
 - **测试**：常数押注 ⇒ 技能分 0 且区间跨 0（自证：去掉基准率参照即变红）；固定种子下两次运行结果逐位相同（防 flaky）；区间跨 0 时文案不含趋势词。
 - **阈值与种子**是代码常量（ADR-0020 同精神），不是用户数据。

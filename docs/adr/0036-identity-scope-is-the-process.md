@@ -1,5 +1,7 @@
 # 身份作用域取进程：副本是默认来源，显式覆盖优先
 
+> **此处已变：** 正文里的 `FATEBOOK_AGENT_API_KEY_FILE` / `FATEBOOK_AGENT_API_KEY` 已由 [ADR-0042](./0042-brand-rename-and-identifiers.md) 改为 `ASSAY_AGENT_API_KEY_FILE` / `ASSAY_AGENT_API_KEY`；决策内容不变，正文保留原样。
+
 本 ADR **收窄** [ADR-0021](./0021-cli-identity-by-credential.md) 关于作用域的规定。原句：「作用域取**仓库副本**——不同的 checkout 可以是不同的身份，**同一副本内的所有子目录是同一个身份**。」在本 ADR 下，副本降为**默认来源**，进程可显式覆盖——即「同一副本内的多个进程可以是多个身份」。其余不变。
 
 触发场景：**一台机器上跑多个 pi 进程，各自代表不同的 Owner**（一份代码、多个账户）。这在内网部署（一台主机服务一个用户组）里是常态，不是边界情况。
