@@ -1,34 +1,16 @@
 # Knowledge Base
 
-This directory stores reusable engineering knowledge documents for the Fatebook project.
+本目录只放**可复用的工程排查笔记**。
 
-## Purpose
+## 内容
 
-- Accumulate practical engineering experience and patterns
-- Document decisions and their context
-- Provide reference for similar future work
+- `troubleshooting/` —— 具体的故障现象、根因与修法（例：HeadlessUI v2 的 `<Transition>` 限制）。
 
-## Structure
+## 不在这里放什么
 
-```
-knowledge/
-├── patterns/          # Reusable code patterns and solutions
-├── decisions/         # Architecture and design decisions (ADRs)
-├── planning.md        # Strategic phase planning document
-├── troubleshooting/  # Common issues and resolutions
-└── guides/           # How-to guides and tutorials
-```
+- **阶段计划** → [`docs/roadmap.md`](../docs/roadmap.md)
+- **架构决策** → [`docs/adr/`](../docs/adr/)
+- **术语与统一语言** → [`CONTEXT.md`](../CONTEXT.md)
+- **项目总览与上手** → [`README.md`](../README.md)
 
-## Key Documents
-
-- **planning.md**: Strategic direction and phase-based goals. Answers "what should we do next?"
-- **architecture.md**: System architecture overview, data model, API structure
-- **patterns/**: Reusable code solutions
-- **decisions/**: Architecture decision records (ADRs)
-
-## Guidelines
-
-- Each document should focus on a specific topic
-- Include context: why this approach was chosen, trade-offs considered
-- Reference related code files when possible
-- Update documents when patterns change
+> 同一件事写两处必然漂移。本目录曾有一份 MCMC 校准计划与一份 fork 前的架构总览，两者都已被实现推翻；保留它们只会让人按错误内容行事。
