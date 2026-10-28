@@ -1,40 +1,91 @@
-name: Test
+name: CI
 
 on:
-  pull_request:
-  # 合并后也在 main 上跑一遍：直推 main 也留下痕迹（真正阻断合并靠分支保护里的
-  # required status check，那不在仓库里）。
   push:
     branches: [main]
+  pull_request:
+  # 手动重跑：改名、依赖升级后不必为了验证 CI 而造一个空提交。
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# 同一分支连推时取消上一次：CI 是门禁，不是审计日志（历史在 Actions 的 runs 页）。
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "22"
 
 jobs:
-  unit:
+  format:
+    name: Prettier
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
-
       - name: Install dependencies
         run: npm ci
+      - name: Check formatting
+        run: npm run format:check
 
+  lint:
+    name: ESLint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
       - name: Lint
         run: npm run lint
 
+  typecheck:
+    name: TypeScript
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      # 类型来自生成产物：跳过这步时 `tsc` 会看到 @prisma/client 的 stub 类型，
+      # 报出一批"字段不存在"的假错误（见 AGENTS.md 的陈旧缓存陷阱）。
+      - name: Generate Prisma client
+        run: npx prisma generate --no-hints
       - name: Typecheck
         run: npm run typecheck
 
+  unit:
+    name: Jest (coverage gates)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Generate Prisma client
+        run: npx prisma generate --no-hints
+      # CI 跑的是 test:coverage：coverageThreshold 只在这条命令下生效。
+      # 本地只跑 npm test 会看不到门槛，历史上因此出现过"本地全绿、CI 全红"。
       - name: Run unit tests with coverage gates
         run: npm run test:coverage
-
-      # 失败时用例清单与覆盖率要能被打开发看，而不是只能翻日志（test:coverage 的
-      # 门槛失败只打印一行，没有行号）。
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
@@ -44,27 +95,21 @@ jobs:
           retention-days: 14
 
   e2e:
+    name: E2E + production build
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
-
       - name: Install dependencies
         run: npm ci
-
       - name: Generate Prisma client
         run: npx prisma generate --no-hints
-
       - name: Start database and mail catcher
         run: docker compose up -d --wait db mail
-
       - name: Run database migrations
         run: npx prisma migrate deploy
         env:
@@ -73,16 +118,14 @@ jobs:
           # pi-lens-ignore: line-length
           DATABASE_DIRECT_URL: postgresql://assay:postgres@localhost:5432/assay_development
 
-      # 空库上的 `migrate deploy` 只证明“迁移能被应用”，不证明“**已有数据**的库升级后
-      # 数据是对的”。本次三条迁移各带一条回填（confirmedByUserId = 作者、nameNormalized
+      # 空库上的 `migrate deploy` 只证明"迁移能被应用"，不证明"**已有数据**的库升级后
+      # 数据是对的"。本次三条迁移各带一条回填（confirmedByUserId = 作者、nameNormalized
       # = lower(name)）或一条约束收紧（Tag 唯一键），写错的后果都是**静默改写历史读数**
       # ——那不会有任何其它测试变红。见 scripts/verify-migration-upgrade.ts。
       - name: Verify migration upgrade path (with data)
         run: npx tsx scripts/verify-migration-upgrade.ts
-
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
-
       - name: Run e2e tests
         run: npm run test:e2e
         env:
@@ -95,7 +138,6 @@ jobs:
           AUTH_EMAIL_SERVER: smtp://localhost:1025
           AUTH_EMAIL_FROM: assay@localhost
           SECRET: e2e-test-secret-do-not-use-in-production
-
       - name: Upload Playwright report
         if: always()
         uses: actions/upload-artifact@v4
@@ -118,3 +160,21 @@ jobs:
           NEXTAUTH_URL: http://localhost:3000/api/auth
           HOST_URL: http://localhost:3000
           SECRET: e2e-test-secret-do-not-use-in-production
+
+  audit:
+    name: Dependency audit (advisory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # 生产依赖目前仍有高危项待升级。这里只做**报告**：写成阻塞门禁会让 main
+    # 长期变红，而长期红的门禁等于没有门禁。修完后把 continue-on-error 去掉。
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high

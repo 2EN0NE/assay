@@ -13,6 +13,7 @@
     "ssl-proxy": "npx local-ssl-proxy --key localhost-key.pem --cert localhost.pem --source 3000 --target 3005",
     "lint": "next lint --dir lib --dir pages --dir components --dir cli --dir e2e",
     "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "studio": "prisma studio",
     "prepare": "husky install",
     "test": "LC_ALL=en-US jest",
