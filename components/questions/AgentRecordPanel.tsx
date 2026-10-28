@@ -64,7 +64,11 @@ export function AgentRecordPanel({
   const quantified = question.forecasts.length > 0
   const pendingProposals = proposals.data ?? []
   const revisionList = revisions.data ?? []
+  // 记录来源看 `agentSessionId`：`--stated-by-owner` 只说明**数字**是当事人给的，
+  // 记录仍是 agent 写的（`Question.provenance` 记的是数字来源）。两者混用会让
+  // 未量化题的「尚未量化」徽章整块消失，而 ADR-0011 要求它必须可见。
   const isAgentRecord =
+    question.agentSessionId !== null ||
     question.provenance === "AGENT" ||
     question.provenance === "AGENT_INSTRUCTED"
 

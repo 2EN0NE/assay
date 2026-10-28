@@ -194,7 +194,7 @@ test("未量化的命题是合法状态：CLI 允许无概率，Web 显示尚未
   await expect(
     page.getByRole("link", { name: title, exact: true }),
   ).toBeVisible()
-  await expect(page.getByText("Agent 录入")).toBeVisible()
+  await expect(page.getByText("记录状态")).toBeVisible()
   // ADR-0011：未量化是合法状态且必须**可见**——否则"当初逃避了量化"无从被矫正
   await expect(page.getByText("尚未量化")).toBeVisible()
 })
@@ -375,8 +375,8 @@ test("复盘视图：决策时记录与最终结果并排，且结算后清单�
   await expect(page.getByText(/决策清单/)).toBeVisible()
   await expect(page.getByText(/挂着的预测/)).toBeVisible()
 
-  // 4) 结算之后清单已锁定，并说明是哪条预测关上的门
-  await expect(page.getByText(/清单已锁定/)).toBeVisible()
+  // 4) 结算之后清单与叙事已冻结，并说明是哪条预测关上的门
+  await expect(page.getByText(/清单与叙事已冻结/)).toBeVisible()
 
   // 5) 锁定不只是界面上写着：服务端真的拒绝写入，且拒绝信息指明是哪条预测
   const lockedWrite = await runCliExpectingFailure(
