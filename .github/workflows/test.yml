@@ -108,6 +108,11 @@ jobs:
         run: npm ci
       - name: Generate Prisma client
         run: npx prisma generate --no-hints
+      # compose 的 app 服务声明了 env_file: .env；CI 里没有这个未跟踪文件，
+      # 而 `docker compose exec` 解析配置时要求它存在（即使只操作 db 服务）。
+      # 各步骤真正的值由下方 env 覆盖，这里只是让 compose 有文件可读。
+      - name: Create .env for compose
+        run: cp .env.example .env
       - name: Start database and mail catcher
         run: docker compose up -d --wait db mail
       - name: Run database migrations
@@ -166,8 +171,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     # 生产依赖目前仍有高危项待升级。这里只做**报告**：写成阻塞门禁会让 main
-    # 长期变红，而长期红的门禁等于没有门禁。修完后把 continue-on-error 去掉。
-    continue-on-error: true
+    # 长期变红，而长期红的门禁等于没有门禁。修完高危项后把 `|| echo` 去掉即可转为阻塞。
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -177,4 +181,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Audit production dependencies
-        run: npm audit --omit=dev --audit-level=high
+        run: |
+          npm audit --omit=dev --audit-level=high \
+            || echo "::warning::生产依赖存在高危项（见上方明细），当前仅报告，不阻塞合并"
