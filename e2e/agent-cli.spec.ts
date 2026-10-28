@@ -72,6 +72,9 @@ async function runCli(
         ...process.env,
         ASSAY_AGENT_API_KEY: "",
         ASSAY_AGENT_USER_EMAIL: ownerEmail,
+        // CI 里没有 pi 会话；显式给一个会话标识，否则 `agentSessionId` 为空，
+        // 「记录状态」面板不渲染——测试就变成"只有在 agent 里跑才过"。
+        PI_SESSION_ID: "e2e-session",
       },
       maxBuffer: 10 * 1024 * 1024,
     },
