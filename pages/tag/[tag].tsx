@@ -46,10 +46,14 @@ export default function TagPage() {
             </h3>
           )}
         </div>
-        {tagQ.data && userId && <div className="prose max-md:hidden flex flex-col gap-12 max-w-[400px]">
-          <h3 className="pt-6 pb-4">Your calibration on “{tagQ.data.name}” questions</h3>
-          <CalibrationChart userId={userId} tags={[tagName]} />
-        </div>}
+        {tagQ.data && userId && (
+          <div className="prose max-md:hidden flex flex-col gap-12 max-w-[400px]">
+            <h3 className="pt-6 pb-4">
+              Your calibration on “{tagQ.data.name}” questions
+            </h3>
+            <CalibrationChart userId={userId} tags={[tagName]} />
+          </div>
+        )}
       </div>
     </div>
   )
